@@ -23,8 +23,8 @@ export const getFirebaseConfig = () => {
     };
   }
 
-  // 2. Try to load from static JSON configuration
-  if (firebaseAppletConfig && firebaseAppletConfig.apiKey) {
+  // 2. Try to load from static JSON configuration (if configured)
+  if (firebaseAppletConfig && firebaseAppletConfig.apiKey && firebaseAppletConfig.apiKey.trim() !== "") {
     return {
       apiKey: firebaseAppletConfig.apiKey,
       authDomain: firebaseAppletConfig.authDomain,
