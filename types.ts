@@ -39,6 +39,7 @@ export interface Employee {
   status?: 'ACTIVO' | 'INACTIVO' | 'BAJA';
   vacationDaysEarnedAdjustment?: number | null;
   vacationDaysUsedAdjustment?: number | null;
+  credentialCode?: string; // Folio / Código numérico de 8 dígitos para validación pública
   credentialViewsCount?: number; // Contador de consultas / escaneos QR
   lastCredentialViewAt?: string; // Fecha y hora ISO de la última consulta
 

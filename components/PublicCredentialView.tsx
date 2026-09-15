@@ -15,7 +15,7 @@ import {
   FileText
 } from 'lucide-react';
 import { Employee, AppSettings } from '../types';
-import { getEmployeeById, getAppSettings, incrementEmployeeCredentialViews } from '../services/dbService';
+import { getEmployeeById, getAppSettings, incrementEmployeeCredentialViews, getEmployeeCredentialCode } from '../services/dbService';
 
 interface PublicCredentialViewProps {
   employeeId: string;
@@ -261,9 +261,9 @@ export const PublicCredentialView: React.FC<PublicCredentialViewProps> = ({ empl
               <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-200 pb-1.5 flex items-center justify-between">
                 <span className="flex items-center gap-1.5 text-slate-700">
                   <Building2 className="w-3.5 h-3.5 text-slate-600" />
-                  Datos Oficiales de la Empresa
+                  INFORMACIÓN FISCAL - {companyName}
                 </span>
-                <span className="text-[9px] font-semibold text-slate-400">Emisor</span>
+                <span className="text-[9px] font-semibold text-slate-400">Oficial</span>
               </h4>
 
               <div className="space-y-2 text-xs">
@@ -313,7 +313,7 @@ export const PublicCredentialView: React.FC<PublicCredentialViewProps> = ({ empl
             <div className="flex items-center justify-center gap-1 text-[11px] text-slate-500 font-medium">
               <ShieldCheck className="w-3.5 h-3.5 text-slate-700" />
               <span>Folio de Validación:</span>
-              <span className="font-mono font-bold text-slate-800">{employee.id.toUpperCase()}</span>
+              <span className="font-mono font-bold text-slate-800">{getEmployeeCredentialCode(employee)}</span>
             </div>
             <p className="text-[10px] text-slate-400">
               Verificado el {verifiedTime} mediante sistema centralizado.

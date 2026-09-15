@@ -292,21 +292,70 @@ export const getEmployees = async (): Promise<Employee[]> => {
   return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Employee));
 };
 
-export const getEmployeeById = async (id: string): Promise<Employee | null> => {
+/**
+ * Genera un código único de 8 dígitos numéricos para credencial oficial
+ */
+export const generateUniqueCredentialCode = (): string => {
+  return Math.floor(10000000 + Math.random() * 90000000).toString();
+};
+
+/**
+ * Obtiene el folio numérico de 8 dígitos de un colaborador.
+ * Si ya tiene uno asignado, lo retorna. Si no, calcula uno determinista y consistente.
+ */
+export const getEmployeeCredentialCode = (employee: Employee): string => {
+  if (employee.credentialCode && /^\d{8}$/.test(employee.credentialCode)) {
+    return employee.credentialCode;
+  }
+  const source = employee.id || employee.curp || `${employee.firstName}${employee.lastName}`;
+  let hash = 0;
+  for (let i = 0; i < source.length; i++) {
+    hash = (hash * 31 + source.charCodeAt(i)) % 100000000;
+  }
+  const num = 10000000 + Math.abs(hash % 90000000);
+  return num.toString();
+};
+
+export const getEmployeeById = async (idOrCode: string): Promise<Employee | null> => {
+  if (!idOrCode) return null;
+  const cleanTerm = idOrCode.trim();
+
   try {
-    const employeeRef = doc(db, "employees", id);
+    // 1. Buscar por ID de documento directo
+    const employeeRef = doc(db, "employees", cleanTerm);
     const docSnap = await getDoc(employeeRef);
     if (docSnap.exists()) {
       return { id: docSnap.id, ...docSnap.data() } as Employee;
     }
+
+    // 2. Si es un folio numérico de 8 dígitos o código, buscar por campo "credentialCode"
+    const q = query(collection(db, "employees"), where("credentialCode", "==", cleanTerm));
+    const querySnap = await getDocs(q);
+    if (!querySnap.empty) {
+      const foundDoc = querySnap.docs[0];
+      return { id: foundDoc.id, ...foundDoc.data() } as Employee;
+    }
+
+    // 3. Fallback: Buscar entre todos los colaboradores si coincide con su código determinista de 8 dígitos
+    const allSnap = await getDocs(collection(db, "employees"));
+    for (const d of allSnap.docs) {
+      const emp = { id: d.id, ...d.data() } as Employee;
+      if (getEmployeeCredentialCode(emp) === cleanTerm) {
+        return emp;
+      }
+    }
   } catch (error) {
-    console.error("Error fetching employee by id:", error);
+    console.error("Error fetching employee by id or credential code:", error);
   }
   return null;
 };
 
 export const addEmployee = async (employee: Omit<Employee, 'id'>) => {
-  return await addDoc(collection(db, "employees"), employee);
+  const credentialCode = employee.credentialCode || generateUniqueCredentialCode();
+  return await addDoc(collection(db, "employees"), {
+    ...employee,
+    credentialCode
+  });
 };
 
 export const updateEmployee = async (id: string, employee: Partial<Employee>) => {

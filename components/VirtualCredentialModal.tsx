@@ -16,6 +16,7 @@ import {
   Clock
 } from 'lucide-react';
 import { Employee } from '../types';
+import { getEmployeeCredentialCode } from '../services/dbService';
 import QRCode from 'qrcode';
 import jsPDF from 'jspdf';
 
@@ -44,8 +45,11 @@ export const VirtualCredentialModal: React.FC<VirtualCredentialModalProps> = ({
   const [copied, setCopied] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
-  // Generate public verification link (Root URL to ensure universal compatibility)
-  const verificationUrl = `${window.location.origin}/?credencial=${employee.id}`;
+  // Código numérico de 8 dígitos para la validación pública oficial
+  const credentialCode = getEmployeeCredentialCode(employee);
+
+  // Generar link oficial de validación con el folio de 8 dígitos
+  const verificationUrl = `${window.location.origin}/?credencial=${credentialCode}`;
 
   useEffect(() => {
     // Generate high resolution QR code
@@ -74,6 +78,7 @@ export const VirtualCredentialModal: React.FC<VirtualCredentialModalProps> = ({
       `Colaborador: ${employee.firstName} ${employee.lastName}\n` +
       `Puesto: ${employee.position || 'Colaborador'}\n` +
       `Empresa: ${companyName || 'Mi Oficina'}\n` +
+      `Folio: ${credentialCode}\n` +
       `Valida la autenticidad y estatus en tiempo real aquí:\n${verificationUrl}`
     );
     window.open(`https://wa.me/?text=${text}`, '_blank');
@@ -241,7 +246,7 @@ export const VirtualCredentialModal: React.FC<VirtualCredentialModalProps> = ({
       doc.setTextColor(255, 255, 255);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(4);
-      doc.text(`FOLIO: ${employee.id.substring(0, 12).toUpperCase()} | VÁLIDA Y CERTIFICADA`, 27, 84.2, { align: 'center' });
+      doc.text(`FOLIO: ${credentialCode} | VÁLIDA Y CERTIFICADA`, 27, 84.2, { align: 'center' });
 
       // Save PDF
       doc.save(`Credencial_${employee.firstName}_${employee.lastName}.pdf`);
@@ -430,7 +435,7 @@ export const VirtualCredentialModal: React.FC<VirtualCredentialModalProps> = ({
                   <ShieldCheck className="w-4 h-4 text-slate-700" />
                   <div>
                     <p className="text-[10px] font-bold text-slate-800 uppercase tracking-tight">Certificación Oficial</p>
-                    <p className="text-[9px] text-slate-500 font-mono">ID: {employee.id.substring(0, 10)}...</p>
+                    <p className="text-[9px] text-slate-600 font-mono font-bold">FOLIO: {credentialCode}</p>
                   </div>
                 </div>
 
@@ -460,7 +465,7 @@ export const VirtualCredentialModal: React.FC<VirtualCredentialModalProps> = ({
                 <div className="mt-3.5 pt-3 border-t border-slate-100 text-[10px] space-y-1.5 bg-slate-50/80 p-3 rounded-xl border border-slate-200/70">
                   <div className="flex items-center gap-1.5 text-slate-700 font-bold uppercase tracking-wider text-[9px] border-b border-slate-200/60 pb-1">
                     <Building2 className="w-3 h-3 text-slate-500" />
-                    <span>Emisor: {companyName || 'Mi Oficina'}</span>
+                    <span>INFORMACIÓN FISCAL - {companyName || 'EMPRESA'}</span>
                   </div>
                   {companyRfc && (
                     <div className="flex items-center justify-between gap-2">
