@@ -9,7 +9,10 @@ import {
   Loader2, 
   Clock, 
   Lock,
-  ExternalLink
+  ExternalLink,
+  MapPin,
+  Phone,
+  FileText
 } from 'lucide-react';
 import { Employee, AppSettings } from '../types';
 import { getEmployeeById, getAppSettings, incrementEmployeeCredentialViews } from '../services/dbService';
@@ -157,14 +160,14 @@ export const PublicCredentialView: React.FC<PublicCredentialViewProps> = ({ empl
               <img 
                 src={companyLogo} 
                 alt={companyName} 
-                className="h-12 sm:h-14 max-w-[180px] object-contain" 
+                className="h-24 sm:h-28 max-w-[320px] object-contain drop-shadow-xs" 
               />
             ) : (
-              <div className="p-2.5 bg-slate-100 rounded-xl border border-slate-200 text-slate-700">
-                <Building2 className="w-6 h-6" />
+              <div className="p-3.5 bg-slate-100 rounded-xl border border-slate-200 text-slate-700">
+                <Building2 className="w-8 h-8" />
               </div>
             )}
-            <h2 className="text-sm font-black uppercase tracking-wider text-slate-900">
+            <h2 className="text-sm font-black uppercase tracking-wider text-slate-900 mt-1">
               {companyName}
             </h2>
           </div>
@@ -251,6 +254,59 @@ export const PublicCredentialView: React.FC<PublicCredentialViewProps> = ({ empl
               </div>
             </div>
           </div>
+
+          {/* Official Company / Issuer Information (Conditional) */}
+          {settings?.showCompanyInfoOnCredential && (settings.companyRfc || settings.companyAddress || settings.companyPhone) && (
+            <div className="bg-slate-50 rounded-xl p-4 border border-slate-200/80 space-y-2.5">
+              <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-200 pb-1.5 flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-slate-700">
+                  <Building2 className="w-3.5 h-3.5 text-slate-600" />
+                  Datos Oficiales de la Empresa
+                </span>
+                <span className="text-[9px] font-semibold text-slate-400">Emisor</span>
+              </h4>
+
+              <div className="space-y-2 text-xs">
+                {settings.companyRfc && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
+                      <FileText className="w-3 h-3 text-slate-400" />
+                      RFC
+                    </span>
+                    <span className="font-mono font-bold text-slate-800 text-[11px] select-all">
+                      {settings.companyRfc}
+                    </span>
+                  </div>
+                )}
+
+                {settings.companyAddress && (
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1 shrink-0 pt-0.5">
+                      <MapPin className="w-3 h-3 text-slate-400" />
+                      Domicilio
+                    </span>
+                    <span className="font-medium text-slate-700 text-right text-[11px] leading-tight">
+                      {settings.companyAddress}
+                    </span>
+                  </div>
+                )}
+
+                {settings.companyPhone && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
+                      <Phone className="w-3 h-3 text-slate-400" />
+                      Teléfono
+                    </span>
+                    <span className="font-semibold text-slate-800 text-[11px]">
+                      <a href={`tel:${settings.companyPhone.replace(/\s+/g, '')}`} className="hover:underline text-indigo-600">
+                        {settings.companyPhone}
+                      </a>
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Validation Audit Info */}
           <div className="text-center pt-2 border-t border-slate-100 space-y-1">

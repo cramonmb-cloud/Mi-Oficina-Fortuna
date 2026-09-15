@@ -20,6 +20,10 @@ interface PersonnelProps {
   currentUser?: Employee | null;
   companyName?: string;
   companyLogoUrl?: string;
+  companyRfc?: string;
+  companyAddress?: string;
+  companyPhone?: string;
+  showCompanyInfoOnCredential?: boolean;
 }
 
 const CATEGORIES: PersonnelCategory[] = ['Oficina', 'Ejecutivos', 'Supervisoras', 'Promotoras'];
@@ -52,7 +56,18 @@ const INITIAL_FORM_STATE = {
 
 import { getLocalDateString } from '../lib/dateUtils';
 
-export const Personnel: React.FC<PersonnelProps> = ({ employees, plazas, isLoading, currentUser, companyName, companyLogoUrl }) => {
+export const Personnel: React.FC<PersonnelProps> = ({ 
+  employees, 
+  plazas, 
+  isLoading, 
+  currentUser, 
+  companyName, 
+  companyLogoUrl,
+  companyRfc,
+  companyAddress,
+  companyPhone,
+  showCompanyInfoOnCredential
+}) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isPlazaModalOpen, setIsPlazaModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -2192,6 +2207,10 @@ export const Personnel: React.FC<PersonnelProps> = ({ employees, plazas, isLoadi
           employee={selectedCredentialEmployee}
           companyName={companyName || 'Mi Oficina'}
           companyLogoUrl={companyLogoUrl}
+          companyRfc={companyRfc}
+          companyAddress={companyAddress}
+          companyPhone={companyPhone}
+          showCompanyInfo={showCompanyInfoOnCredential}
           onClose={() => setSelectedCredentialEmployee(null)}
         />
       )}

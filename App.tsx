@@ -167,6 +167,10 @@ function App() {
   const [mascotaName, setMascotaName] = useState('Mascota');
   const [companyName, setCompanyName] = useState('');
   const [companyLogoUrl, setCompanyLogoUrl] = useState('');
+  const [companyRfc, setCompanyRfc] = useState('');
+  const [companyAddress, setCompanyAddress] = useState('');
+  const [companyPhone, setCompanyPhone] = useState('');
+  const [showCompanyInfoOnCredential, setShowCompanyInfoOnCredential] = useState(false);
   const [imprentaUrl, setImprentaUrl] = useState('');
   const [multiOfficeEnabled, setMultiOfficeEnabled] = useState(false);
   
@@ -344,6 +348,10 @@ function App() {
         const settingsData = await getAppSettings();
         setCompanyName(settingsData.companyName || '');
         setCompanyLogoUrl(settingsData.companyLogoUrl || '');
+        setCompanyRfc(settingsData.companyRfc || '');
+        setCompanyAddress(settingsData.companyAddress || '');
+        setCompanyPhone(settingsData.companyPhone || '');
+        setShowCompanyInfoOnCredential(!!settingsData.showCompanyInfoOnCredential);
         setMascotaName(settingsData.mascotaName || 'Mascota');
         setMascotaUrl(settingsData.mascotaUrl || '');
         setGoogleApiKey(settingsData.googleApiKey || '');
@@ -447,6 +455,10 @@ function App() {
     unsubscribers.push(subscribeToAppSettings((settings) => {
       setCompanyName(settings.companyName);
       setCompanyLogoUrl(settings.companyLogoUrl || '');
+      setCompanyRfc(settings.companyRfc || '');
+      setCompanyAddress(settings.companyAddress || '');
+      setCompanyPhone(settings.companyPhone || '');
+      setShowCompanyInfoOnCredential(!!settings.showCompanyInfoOnCredential);
       setMascotaName(settings.mascotaName);
       setMascotaUrl(settings.mascotaUrl);
       setGoogleApiKey(settings.googleApiKey);
@@ -729,7 +741,7 @@ function App() {
 
     switch (activeTab) {
       case 'tablero': return <Dashboard currentUser={currentUser} employees={employees} expenses={dashboardExpenses} tasks={tasks} mascotaUrl={mascotaUrl} mascotaName={mascotaName} companyName={companyName} birthdayPrompt={birthdayPrompt} birthdayVideoPrompt={birthdayVideoPrompt} birthdayWhatsAppTemplate={birthdayWhatsAppTemplate} selectedBdayEmployeeId={selectedBdayEmployeeId} setSelectedBdayEmployeeId={setSelectedBdayEmployeeId} />;
-      case 'personal': return <Personnel employees={employees} plazas={plazas} isLoading={!hasLoadedEmployees} currentUser={currentUser} companyName={companyName} companyLogoUrl={companyLogoUrl} />;
+      case 'personal': return <Personnel employees={employees} plazas={plazas} isLoading={!hasLoadedEmployees} currentUser={currentUser} companyName={companyName} companyLogoUrl={companyLogoUrl} companyRfc={companyRfc} companyAddress={companyAddress} companyPhone={companyPhone} showCompanyInfoOnCredential={showCompanyInfoOnCredential} />;
       case 'autos': return <Vehicles employees={employees} vehicles={vehicles} assignments={vehicleAssignments} events={vehicleEvents} isLoading={!hasLoadedVehicles} companyName={companyName} />;
       case 'gastos': return <Expenses expenses={expenses} employees={employees} isLoading={!hasLoadedExpenses} loadAll={loadAllExpenses} isSyncing={isSyncingExpenses} onLoadAll={() => { setLoadAllExpenses(true); setIsSyncingExpenses(true); }} multiOfficeEnabled={multiOfficeEnabled} currentUser={currentUser} />;
       case 'tareas': return <Tasks tasks={tasks} employees={employees} isLoading={!hasLoadedTasks} />;
@@ -742,6 +754,10 @@ function App() {
           <SettingsSection
             companyName={companyName}
             companyLogoUrl={companyLogoUrl}
+            companyRfc={companyRfc}
+            companyAddress={companyAddress}
+            companyPhone={companyPhone}
+            showCompanyInfoOnCredential={showCompanyInfoOnCredential}
             mascotaName={mascotaName}
             mascotaUrl={mascotaUrl}
             imprentaUrl={imprentaUrl}

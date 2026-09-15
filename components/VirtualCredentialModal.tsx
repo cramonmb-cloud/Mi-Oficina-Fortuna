@@ -23,6 +23,10 @@ interface VirtualCredentialModalProps {
   employee: Employee;
   companyName: string;
   companyLogoUrl?: string;
+  companyRfc?: string;
+  companyAddress?: string;
+  companyPhone?: string;
+  showCompanyInfo?: boolean;
   onClose: () => void;
 }
 
@@ -30,6 +34,10 @@ export const VirtualCredentialModal: React.FC<VirtualCredentialModalProps> = ({
   employee,
   companyName,
   companyLogoUrl,
+  companyRfc,
+  companyAddress,
+  companyPhone,
+  showCompanyInfo,
   onClose
 }) => {
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
@@ -319,24 +327,24 @@ export const VirtualCredentialModal: React.FC<VirtualCredentialModalProps> = ({
           <div className="relative mx-auto max-w-sm w-full bg-white rounded-2xl border border-slate-200 shadow-md overflow-hidden text-slate-900">
             
             {/* Top Brand Header Bar */}
-            <div className="bg-white border-b border-slate-200 px-5 py-3.5 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3 min-w-0">
+            <div className="bg-white border-b border-slate-200 px-5 py-4 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5 min-w-0">
                 {companyLogoUrl ? (
                   <img 
                     src={companyLogoUrl} 
                     alt="Logo Empresa" 
-                    className="h-9 sm:h-11 max-w-[140px] object-contain shrink-0" 
+                    className="h-18 sm:h-22 max-w-[240px] object-contain shrink-0" 
                   />
                 ) : (
-                  <div className="p-2 bg-slate-100 rounded-lg border border-slate-200 text-slate-700 shrink-0">
-                    <Building2 className="w-5 h-5" />
+                  <div className="p-3 bg-slate-100 rounded-xl border border-slate-200 text-slate-700 shrink-0">
+                    <Building2 className="w-8 h-8" />
                   </div>
                 )}
                 <div className="min-w-0">
-                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-900 leading-tight truncate">
+                  <h4 className="text-xs sm:text-sm font-black uppercase tracking-wider text-slate-900 leading-tight truncate">
                     {companyName || 'Mi Oficina'}
                   </h4>
-                  <p className="text-[10px] text-slate-500 font-medium">Credencial de Identificación</p>
+                  <p className="text-[10px] text-slate-500 font-medium mt-0.5">Credencial de Identificación</p>
                 </div>
               </div>
 
@@ -446,6 +454,34 @@ export const VirtualCredentialModal: React.FC<VirtualCredentialModalProps> = ({
                   </div>
                 )}
               </div>
+
+              {/* Información Corporativa de la Empresa (si está habilitada y capturada) */}
+              {showCompanyInfo && (companyRfc || companyAddress || companyPhone) && (
+                <div className="mt-3.5 pt-3 border-t border-slate-100 text-[10px] space-y-1.5 bg-slate-50/80 p-3 rounded-xl border border-slate-200/70">
+                  <div className="flex items-center gap-1.5 text-slate-700 font-bold uppercase tracking-wider text-[9px] border-b border-slate-200/60 pb-1">
+                    <Building2 className="w-3 h-3 text-slate-500" />
+                    <span>Emisor: {companyName || 'Mi Oficina'}</span>
+                  </div>
+                  {companyRfc && (
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-slate-400 uppercase font-semibold">RFC:</span>
+                      <span className="font-mono font-bold text-slate-800 select-all">{companyRfc}</span>
+                    </div>
+                  )}
+                  {companyAddress && (
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-slate-400 uppercase font-semibold shrink-0">Domicilio:</span>
+                      <span className="font-medium text-slate-700 text-right">{companyAddress}</span>
+                    </div>
+                  )}
+                  {companyPhone && (
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-slate-400 uppercase font-semibold">Teléfono:</span>
+                      <span className="font-medium text-slate-700 select-all">{companyPhone}</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Bottom Strip */}

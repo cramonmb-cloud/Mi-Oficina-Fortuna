@@ -140,6 +140,10 @@ export interface AiInsight {
 export interface AppSettings {
   companyName: string;
   companyLogoUrl?: string; // Logotipo oficial de la empresa
+  companyRfc?: string; // RFC oficial de la empresa / financiera
+  companyAddress?: string; // Domicilio oficial de la empresa
+  companyPhone?: string; // Teléfono de contacto oficial
+  showCompanyInfoOnCredential?: boolean; // Habilitar RFC, domicilio y teléfono en credencial virtual y QR
   mascotaName: string;
   mascotaUrl: string;
   googleApiKey?: string;

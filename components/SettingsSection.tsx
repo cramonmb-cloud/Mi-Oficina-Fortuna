@@ -25,7 +25,11 @@ import {
   ArrowLeft,
   Save,
   Globe,
-  Smartphone
+  Smartphone,
+  FileText,
+  MapPin,
+  Phone,
+  CreditCard
 } from 'lucide-react';
 import { 
   updateAppSettings, 
@@ -39,6 +43,10 @@ import { Fallo } from '../types';
 interface SettingsSectionProps {
   companyName: string;
   companyLogoUrl?: string;
+  companyRfc?: string;
+  companyAddress?: string;
+  companyPhone?: string;
+  showCompanyInfoOnCredential?: boolean;
   mascotaName: string;
   mascotaUrl: string;
   imprentaUrl: string;
@@ -59,6 +67,10 @@ type CategoryType = 'general' | 'mascota' | 'apis' | 'mensajeria' | 'navegacion'
 export function SettingsSection({
   companyName,
   companyLogoUrl,
+  companyRfc,
+  companyAddress,
+  companyPhone,
+  showCompanyInfoOnCredential,
   mascotaName,
   mascotaUrl,
   imprentaUrl,
@@ -79,6 +91,10 @@ export function SettingsSection({
   // Form states
   const [tempCompanyName, setTempCompanyName] = useState(companyName);
   const [tempCompanyLogoUrl, setTempCompanyLogoUrl] = useState(companyLogoUrl || '');
+  const [tempCompanyRfc, setTempCompanyRfc] = useState(companyRfc || '');
+  const [tempCompanyAddress, setTempCompanyAddress] = useState(companyAddress || '');
+  const [tempCompanyPhone, setTempCompanyPhone] = useState(companyPhone || '');
+  const [tempShowCompanyInfoOnCredential, setTempShowCompanyInfoOnCredential] = useState(showCompanyInfoOnCredential ?? false);
   const [tempMascotaName, setTempMascotaName] = useState(mascotaName);
   const [tempMascotaUrl, setTempMascotaUrl] = useState(mascotaUrl);
   const [tempImprentaUrl, setTempImprentaUrl] = useState(imprentaUrl);
@@ -106,6 +122,10 @@ export function SettingsSection({
   useEffect(() => {
     setTempCompanyName(companyName);
     setTempCompanyLogoUrl(companyLogoUrl || '');
+    setTempCompanyRfc(companyRfc || '');
+    setTempCompanyAddress(companyAddress || '');
+    setTempCompanyPhone(companyPhone || '');
+    setTempShowCompanyInfoOnCredential(showCompanyInfoOnCredential ?? false);
     setTempMascotaName(mascotaName);
     setTempMascotaUrl(mascotaUrl);
     setTempImprentaUrl(imprentaUrl);
@@ -119,7 +139,8 @@ export function SettingsSection({
     setTempBirthdayWhatsAppTemplate(birthdayWhatsAppTemplate);
     setTempMultiOfficeEnabled(multiOfficeEnabled);
   }, [
-    companyName, mascotaName, mascotaUrl, imprentaUrl, googleApiKey, 
+    companyName, companyLogoUrl, companyRfc, companyAddress, companyPhone, showCompanyInfoOnCredential,
+    mascotaName, mascotaUrl, imprentaUrl, googleApiKey, 
     imgbbApiKey, appVersion, appStatusColor, mobileNavSections, 
     birthdayPrompt, birthdayVideoPrompt, birthdayWhatsAppTemplate,
     multiOfficeEnabled
@@ -252,6 +273,10 @@ export function SettingsSection({
       await updateAppSettings({
         companyName: tempCompanyName,
         companyLogoUrl: tempCompanyLogoUrl,
+        companyRfc: tempCompanyRfc.trim(),
+        companyAddress: tempCompanyAddress.trim(),
+        companyPhone: tempCompanyPhone.trim(),
+        showCompanyInfoOnCredential: tempShowCompanyInfoOnCredential,
         mascotaName: finalMascotaName,
         mascotaUrl: tempMascotaUrl,
         googleApiKey: finalApiKey,
@@ -402,6 +427,81 @@ export function SettingsSection({
                       />
                     </div>
                     <p className="text-[10px] text-slate-400 mt-1">Se usará como nombre de la App en el panel superior y en las credenciales digitales.</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wider mb-1.5">RFC de la Empresa</label>
+                      <div className="relative">
+                        <FileText className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+                        <input 
+                          type="text" 
+                          className="w-full border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-xs font-semibold text-slate-800 bg-slate-50/50 focus:bg-white outline-none focus:ring-2 focus:ring-slate-900 transition-all placeholder:text-slate-400 uppercase font-mono"
+                          placeholder="Ej: EVE200101ABC"
+                          value={tempCompanyRfc}
+                          onChange={(e) => setTempCompanyRfc(e.target.value.toUpperCase())}
+                          id="setting-company-rfc"
+                        />
+                      </div>
+                      <p className="text-[10px] text-slate-400 mt-1">Registro Federal de Contribuyentes oficial.</p>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wider mb-1.5">Teléfono Corporativo</label>
+                      <div className="relative">
+                        <Phone className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+                        <input 
+                          type="text" 
+                          className="w-full border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-xs font-semibold text-slate-800 bg-slate-50/50 focus:bg-white outline-none focus:ring-2 focus:ring-slate-900 transition-all placeholder:text-slate-400"
+                          placeholder="Ej: 33 1234 5678"
+                          value={tempCompanyPhone}
+                          onChange={(e) => setTempCompanyPhone(e.target.value)}
+                          id="setting-company-phone"
+                        />
+                      </div>
+                      <p className="text-[10px] text-slate-400 mt-1">Teléfono principal de atención de la oficina.</p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wider mb-1.5">Domicilio de la Empresa</label>
+                    <div className="relative">
+                      <MapPin className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+                      <input 
+                        type="text" 
+                        className="w-full border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-xs font-semibold text-slate-800 bg-slate-50/50 focus:bg-white outline-none focus:ring-2 focus:ring-slate-900 transition-all placeholder:text-slate-400"
+                        placeholder="Ej: Av. Hidalgo 450, Col. Americana, Guadalajara, Jalisco"
+                        value={tempCompanyAddress}
+                        onChange={(e) => setTempCompanyAddress(e.target.value)}
+                        id="setting-company-address"
+                      />
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1">Dirección fiscal o física de la sucursal/financiera.</p>
+                  </div>
+
+                  {/* Toggle para Credencial Virtual Oficial */}
+                  <div className="p-3.5 bg-slate-50 border border-slate-200/90 rounded-xl flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-2.5">
+                      <div className="p-2 bg-slate-900 text-white rounded-lg mt-0.5 shrink-0">
+                        <CreditCard className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <span className="text-xs font-bold text-slate-800 block">Mostrar datos oficiales en la Credencial Virtual y QR</span>
+                        <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
+                          Al habilitar esta opción, el <strong>RFC</strong>, <strong>Domicilio</strong> y <strong>Teléfono</strong> se incluirán en la credencial virtual del colaborador y al escanear el código QR. Si se deshabilita o si no se captura algún dato, no se mostrará.
+                        </p>
+                      </div>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
+                      <input 
+                        type="checkbox" 
+                        className="sr-only peer"
+                        checked={tempShowCompanyInfoOnCredential}
+                        onChange={(e) => setTempShowCompanyInfoOnCredential(e.target.checked)}
+                        id="setting-show-company-credential"
+                      />
+                      <div className="w-10 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
+                    </label>
                   </div>
 
                   <div className="border-t border-slate-100 pt-4">
