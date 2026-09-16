@@ -30,12 +30,14 @@ import {
   subscribeToVacationRequests
 } from '../services/dbService';
 import { AppleClockWeatherWidget } from './AppleClockWeatherWidget';
+import { DashboardTasksWidget } from './DashboardTasksWidget';
 
 interface ModuleVisibility {
   appleClockWeather?: boolean;
   weeklyPermits: boolean;
-  priorityTasks: boolean;
-  upcomingDeliveries: boolean;
+  tasksWidget?: boolean;
+  priorityTasks?: boolean;
+  upcomingDeliveries?: boolean;
   birthdaysMonthCard: boolean;
   kpiTotalEmployees: boolean;
   kpiMonthExpenses: boolean;
@@ -46,8 +48,7 @@ interface ModuleVisibility {
 const DEFAULT_VISIBILITY: ModuleVisibility = {
   appleClockWeather: true,
   weeklyPermits: true,
-  priorityTasks: true,
-  upcomingDeliveries: true,
+  tasksWidget: true,
   birthdaysMonthCard: true,
   kpiTotalEmployees: true,
   kpiMonthExpenses: true,
@@ -488,7 +489,7 @@ La mascota salta de alegría sonriendo a la cámara, rodeada de confeti brillant
     ? "grid grid-cols-1 md:grid-cols-2 gap-6"
     : "grid grid-cols-1 gap-6";
 
-  const showLeftCol = visibleModules.priorityTasks || visibleModules.upcomingDeliveries;
+  const showLeftCol = visibleModules.tasksWidget !== false;
   const showRightCol = visibleModules.birthdaysMonthCard;
   
   return (
@@ -885,93 +886,11 @@ La mascota salta de alegría sonriendo a la cámara, rodeada de confeti brillant
           {/* Left Col: Tasks */}
           {showLeftCol && (
             <div className={`${showRightCol ? 'lg:col-span-2' : 'lg:col-span-3'} space-y-6`}>
-              {/* Priority Tasks */}
-              {visibleModules.priorityTasks && (
-                <div className="bg-white p-5 rounded-xl border border-slate-200/80 shadow-xs flex flex-col">
-                  <h3 className="text-sm font-bold text-slate-900 mb-3.5 flex items-center">
-                    <AlertCircle className="w-4 h-4 mr-2 text-rose-500" /> Tareas de Alta Prioridad
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {tasks.filter(t => t.priority === 'Alta' && t.status !== TaskStatus.DONE).length === 0 ? (
-                      <div className="col-span-full p-6 text-center bg-slate-50 rounded-lg border border-dashed border-slate-200">
-                        <p className="text-xs text-slate-400 font-medium">Sin tareas urgentes pendientes</p>
-                      </div>
-                    ) : (
-                      tasks
-                      .filter(t => t.priority === 'Alta' && t.status !== TaskStatus.DONE)
-                      .map(task => (
-                        <div key={task.id} className="p-3.5 border border-rose-200 bg-rose-50/40 rounded-lg">
-                          <div className="flex justify-between items-start mb-1.5">
-                            <h4 className="font-semibold text-xs text-slate-900 line-clamp-1">{task.title}</h4>
-                            <span className="text-[10px] font-mono font-medium text-rose-700 bg-white px-1.5 py-0.5 rounded border border-rose-200 whitespace-nowrap">{task.dueDate}</span>
-                          </div>
-                          <p className="text-xs text-slate-500">{employees.find(e => e.id === task.assignedTo)?.firstName || 'Sin asignar'}</p>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Upcoming Tasks Table */}
-              {visibleModules.upcomingDeliveries && (
-                <div className="bg-white p-5 rounded-xl border border-slate-200/80 shadow-xs">
-                  <h3 className="text-sm font-bold text-slate-900 mb-3.5 flex items-center">
-                    <Clock className="w-4 h-4 mr-2 text-slate-600" /> Próximas Entregas y Vencimientos
-                  </h3>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left">
-                      <thead>
-                        <tr className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider border-b border-slate-100">
-                          <th className="pb-2.5 pl-1">Tarea</th>
-                          <th className="pb-2.5">Responsable</th>
-                          <th className="pb-2.5">Fecha</th>
-                          <th className="pb-2.5">Prioridad</th>
-                          <th className="pb-2.5 text-right pr-1">Estado</th>
-                        </tr>
-                      </thead>
-                      <tbody className="text-xs divide-y divide-slate-100">
-                        {upcomingTasks.length === 0 ? (
-                          <tr>
-                            <td colSpan={5} className="py-6 text-center text-slate-400 font-medium">
-                              No hay tareas próximas programadas.
-                            </td>
-                          </tr>
-                        ) : (
-                          upcomingTasks.map(task => (
-                            <tr key={task.id} className="hover:bg-slate-50/70 transition-colors">
-                              <td className="py-2.5 pl-1 font-medium text-slate-800">{task.title}</td>
-                              <td className="py-2.5 text-slate-600">
-                                <div className="flex items-center">
-                                  <div className="w-5 h-5 rounded-md bg-slate-100 border border-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-600 mr-2">
-                                    {(employees.find(e => e.id === task.assignedTo)?.firstName?.charAt(0) || '?')}
-                                  </div>
-                                  <span>{employees.find(e => e.id === task.assignedTo)?.firstName || 'Sin asignar'}</span>
-                                </div>
-                              </td>
-                              <td className="py-2.5 text-slate-500 font-mono">
-                                {task.dueDate}
-                              </td>
-                              <td className="py-2.5">
-                                <span className={`text-[10px] px-2 py-0.5 rounded border uppercase font-bold tracking-wide ${getPriorityStyle(task.priority)}`}>
-                                  {task.priority}
-                                </span>
-                              </td>
-                              <td className="py-2.5 text-right pr-1">
-                                <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${
-                                  task.status === TaskStatus.IN_PROGRESS ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'bg-slate-100 text-slate-600'
-                                }`}>
-                                  {task.status}
-                                </span>
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
+              <DashboardTasksWidget
+                tasks={tasks}
+                employees={employees}
+                currentUser={currentUser}
+              />
             </div>
           )}
 
@@ -1056,10 +975,9 @@ La mascota salta de alegría sonriendo a la cámara, rodeada de confeti brillant
                 <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Módulos Principales</div>
                 
                 {[
-                  { key: 'appleClockWeather', label: 'Reloj y Clima en Vivo', desc: 'Reloj digital tipo Apple y clima de Ciudad Guzmán' },
+                  { key: 'appleClockWeather', label: 'Reloj y Clima en Vivo', desc: 'Reloj digital tipo Apple y clima en tiempo real' },
+                  { key: 'tasksWidget', label: 'Tareas a la Mano', desc: 'Acceso rápido, agregar y completar tareas' },
                   { key: 'weeklyPermits', label: 'Calendario Semanal de Permisos', desc: 'Vacaciones y ausencias de la semana' },
-                  { key: 'priorityTasks', label: 'Tareas Prioritarias', desc: 'Alertas de tareas urgentes' },
-                  { key: 'upcomingDeliveries', label: 'Próximas Entregas', desc: 'Entregas programadas cercanas' },
                   { key: 'birthdaysMonthCard', label: 'Cumpleaños del Mes', desc: 'Módulo de felicitaciones' },
                 ].map((mod) => (
                   <div key={mod.key} className="flex items-center justify-between p-2.5 bg-slate-50 rounded-lg border border-slate-200/70">
