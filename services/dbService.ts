@@ -994,3 +994,62 @@ export const saveContractTypesToCloud = async (contractTypes: any[]) => {
     throw err;
   }
 };
+
+// --- DOCUMENT FORMATS CLOUD CONFIGURATION ---
+
+export const subscribeToDocumentFormats = (callback: (formats: any[]) => void, onError?: (error: any) => void) => {
+  const docRef = doc(db, "settings", "document_formats_config");
+  return onSnapshot(docRef, (docSnap) => {
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      if (Array.isArray(data?.documentFormats) && data.documentFormats.length > 0) {
+        callback(data.documentFormats);
+        return;
+      }
+    }
+    callback([]);
+  }, onError || ((err) => console.error("Error subscribing to document formats:", err)));
+};
+
+export const saveDocumentFormatsToCloud = async (documentFormats: any[]) => {
+  try {
+    const docRef = doc(db, "settings", "document_formats_config");
+    await setDoc(docRef, {
+      documentFormats,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  } catch (err) {
+    console.error("Error saving document formats to cloud:", err);
+    throw err;
+  }
+};
+
+// --- GENERATED DOCUMENTS HISTORY ---
+
+export const subscribeToGeneratedDocuments = (callback: (docs: any[]) => void, onError?: (error: any) => void) => {
+  const q = query(collection(db, "generated_documents"), orderBy("generatedAt", "desc"));
+  return onSnapshot(q, (snapshot) => {
+    const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    callback(docs);
+  }, onError || ((err) => console.error("Error subscribing to generated documents:", err)));
+};
+
+export const saveGeneratedDocument = async (docRecord: any) => {
+  try {
+    const colRef = collection(db, "generated_documents");
+    const docRef = await addDoc(colRef, {
+      ...docRecord,
+      createdAt: new Date().toISOString()
+    });
+    return docRef.id;
+  } catch (err) {
+    console.error("Error saving generated document to cloud:", err);
+    throw err;
+  }
+};
+
+export const deleteGeneratedDocument = async (id: string) => {
+  return await deleteDoc(doc(db, "generated_documents", id));
+};
+
+

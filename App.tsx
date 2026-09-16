@@ -37,7 +37,8 @@ import {
   Wand2,
   Printer,
   Car,
-  MessageSquare
+  MessageSquare,
+  FileStack
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { 
@@ -63,6 +64,7 @@ import { Fallos } from './components/Fallos';
 import { Imprenta } from './components/Imprenta';
 import { Vehicles } from './components/Vehicles';
 import { SettingsSection } from './components/SettingsSection';
+import { Formatos } from './components/Formatos';
 
 import { 
   getEmployees, 
@@ -182,6 +184,7 @@ function App() {
       { id: 'gastos', label: 'Gastos', icon: DollarSign },
       { id: 'tareas', label: 'Tareas', icon: CheckSquare },
       { id: 'pagares', label: 'Pagarés', icon: FileSignature },
+      { id: 'formatos', label: 'Formatos', icon: FileStack },
       { id: 'fallos', label: 'Fallos', icon: FileWarning },
       { id: 'mascota', label: `Mi ${mascotaName}`, icon: ImageIcon }, 
       { id: 'imprenta', label: 'Imprenta', icon: Printer },
@@ -746,6 +749,7 @@ function App() {
       case 'gastos': return <Expenses expenses={expenses} employees={employees} isLoading={!hasLoadedExpenses} loadAll={loadAllExpenses} isSyncing={isSyncingExpenses} onLoadAll={() => { setLoadAllExpenses(true); setIsSyncingExpenses(true); }} multiOfficeEnabled={multiOfficeEnabled} currentUser={currentUser} />;
       case 'tareas': return <Tasks tasks={tasks} employees={employees} isLoading={!hasLoadedTasks} />;
       case 'pagares': return <PromissoryNotes companyName={companyName} />;
+      case 'formatos': return <Formatos companyName={companyName} companyLogoUrl={companyLogoUrl} companyRfc={companyRfc} companyAddress={companyAddress} companyPhone={companyPhone} employees={employees} plazas={plazas} currentUser={currentUser} />;
       case 'fallos': return <Fallos currentUser={currentUser} employees={employees} fallos={fallos} isLoading={!hasLoadedFallos} loadAll={loadAllFallos} isSyncing={isSyncingFallos} onLoadAll={() => { setLoadAllFallos(true); setIsSyncingFallos(true); }} />;
       case 'mascota': return <Mascota mascotaUrl={mascotaUrl} mascotaName={mascotaName} onOpenSettings={handleOpenSettings} employees={employees} onSelectBdayEmployee={(empId) => { setSelectedBdayEmployeeId(empId); handleTabChange('tablero'); }} />;
       case 'imprenta': return <Imprenta imprentaUrl={imprentaUrl} onOpenSettings={handleOpenSettings} />;

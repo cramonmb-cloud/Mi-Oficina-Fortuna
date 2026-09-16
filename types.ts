@@ -102,6 +102,32 @@ export interface ContractTypeConfig {
   createdAt?: string;
 }
 
+export interface DocumentFormatConfig {
+  id: string;
+  title: string;
+  shortDesc: string;
+  category: 'Laboral' | 'Cobranza' | 'Credito' | 'Administrativo' | 'General' | string;
+  iconName?: string;
+  badgeColor?: string;
+  template: string;
+  isCustom?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface GeneratedDocumentRecord {
+  id: string;
+  formatId: string;
+  formatTitle: string;
+  employeeId?: string;
+  employeeName: string;
+  content: string;
+  generatedAt: string;
+  generatedBy?: string;
+}
+
+
+
 export interface Expense {
   id: string;
   description: string;

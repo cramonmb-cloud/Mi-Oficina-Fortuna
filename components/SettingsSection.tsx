@@ -307,6 +307,7 @@ export function SettingsSection({
     { id: 'gastos', label: 'Gastos', icon: LayoutGrid },
     { id: 'tareas', label: 'Tareas', icon: LayoutGrid },
     { id: 'pagares', label: 'Pagarés', icon: LayoutGrid },
+    { id: 'formatos', label: 'Formatos', icon: LayoutGrid },
     { id: 'fallos', label: 'Fallos', icon: LayoutGrid },
     { id: 'mascota', label: `Mi ${tempMascotaName}`, icon: LayoutGrid }, 
     { id: 'imprenta', label: 'Imprenta', icon: LayoutGrid },
