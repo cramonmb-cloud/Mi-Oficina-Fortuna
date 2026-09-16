@@ -960,38 +960,46 @@ function App() {
         </header>
 
         {/* Dynamic Page Content */}
-        <div className="flex-1 overflow-auto bg-slate-50/60 pb-20 lg:pb-6">
+        <div className="flex-1 overflow-auto bg-slate-50/60 pb-28 lg:pb-6">
           {renderContent()}
         </div>
 
-        {/* Clean Mobile Bottom Navigation Bar */}
+        {/* Apple Liquid Glass Mobile Bottom Navigation Dock */}
         {!currentUser?.isOfficeUser && (
-          <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-slate-200 z-40 px-2 py-1.5 flex items-center justify-around shadow-sm">
-            {navItems
-              .filter(item => mobileNavSections.includes(item.id))
-              .map((item) => {
-                const Icon = item.icon;
-                const isActive = activeTab === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => handleTabChange(item.id)}
-                    className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-lg transition-colors ${
-                      isActive 
-                        ? 'text-slate-900 font-semibold' 
-                        : 'text-slate-400 hover:text-slate-600'
-                    }`}
-                  >
-                    <div className={`p-1 rounded-md transition-colors ${isActive ? 'bg-slate-100 text-slate-900' : ''}`}>
-                      <Icon className="w-5 h-5" />
-                    </div>
-                    <span className="text-[10px] tracking-tight mt-0.5 truncate max-w-[56px]">
-                      {item.label.split(' ')[0]}
-                    </span>
-                  </button>
-                );
-              })}
-          </nav>
+          <div className="lg:hidden fixed bottom-3 inset-x-3 sm:bottom-4 sm:inset-x-6 z-50 pointer-events-none flex justify-center">
+            <nav className="pointer-events-auto w-full max-w-xl bg-white/80 dark:bg-slate-900/85 backdrop-blur-2xl backdrop-saturate-150 border border-white/60 dark:border-white/15 rounded-3xl p-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.16),0_2px_8px_rgba(0,0,0,0.06),inset_0_1px_1px_rgba(255,255,255,0.9)] overflow-x-auto no-scrollbar flex items-center justify-start sm:justify-center gap-1.5 scroll-smooth">
+              {navItems
+                .filter(item => mobileNavSections.includes(item.id))
+                .map((item) => {
+                  const Icon = item.icon;
+                  const isActive = activeTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => handleTabChange(item.id)}
+                      className={`relative flex flex-col items-center justify-center py-2 px-3 sm:px-4 min-w-[64px] sm:min-w-[72px] h-[60px] rounded-2xl transition-all duration-200 cursor-pointer select-none active:scale-90 shrink-0 ${
+                        isActive 
+                          ? 'bg-slate-900 text-white shadow-md shadow-slate-900/25 font-bold scale-[1.03]' 
+                          : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100/60 font-semibold'
+                      }`}
+                    >
+                      <div className="relative">
+                        <Icon className={`w-5 h-5 transition-transform duration-200 ${isActive ? 'scale-110 text-emerald-400' : 'text-slate-500'}`} />
+                        {isActive && (
+                          <span className="absolute -top-1 -right-1 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                        )}
+                      </div>
+                      <span className={`text-[10px] tracking-tight mt-1 truncate max-w-[64px] ${isActive ? 'text-white font-black' : 'text-slate-500 font-bold'}`}>
+                        {item.label.split(' ')[0]}
+                      </span>
+                      {isActive && (
+                        <span className="w-4 h-0.5 rounded-full bg-emerald-400 mt-0.5"></span>
+                      )}
+                    </button>
+                  );
+                })}
+            </nav>
+          </div>
         )}
       </main>
 
