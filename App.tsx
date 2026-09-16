@@ -38,7 +38,8 @@ import {
   Printer,
   Car,
   MessageSquare,
-  FileStack
+  FileStack,
+  MoreHorizontal
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { 
@@ -214,6 +215,7 @@ function App() {
   // User Menu State
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
+  const [isMobileLauncherOpen, setIsMobileLauncherOpen] = useState(false);
 
   // Global Data State
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -917,9 +919,9 @@ function App() {
         <header className="bg-white border-b border-slate-200 h-14 flex items-center justify-between px-4 sm:px-6 shrink-0 z-30">
           <div className="flex items-center gap-3">
             <button 
-              onClick={() => setSidebarOpen(true)} 
+              onClick={() => setIsMobileLauncherOpen(true)} 
               className="lg:hidden p-1.5 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-              title="Abrir Menú"
+              title="Abrir Menú de Módulos"
             >
               <Menu className="w-5 h-5" />
             </button>
@@ -966,39 +968,263 @@ function App() {
 
         {/* Apple Liquid Glass Mobile Bottom Navigation Dock */}
         {!currentUser?.isOfficeUser && (
-          <div className="lg:hidden fixed bottom-3 inset-x-3 sm:bottom-4 sm:inset-x-6 z-50 pointer-events-none flex justify-center">
-            <nav className="pointer-events-auto w-full max-w-xl bg-white/80 dark:bg-slate-900/85 backdrop-blur-2xl backdrop-saturate-150 border border-white/60 dark:border-white/15 rounded-3xl p-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.16),0_2px_8px_rgba(0,0,0,0.06),inset_0_1px_1px_rgba(255,255,255,0.9)] overflow-x-auto no-scrollbar flex items-center justify-start sm:justify-center gap-1.5 scroll-smooth">
-              {navItems
-                .filter(item => mobileNavSections.includes(item.id))
-                .map((item) => {
+          <div className="lg:hidden fixed bottom-3 inset-x-3 sm:bottom-4 sm:inset-x-6 z-40 pointer-events-none flex justify-center">
+            <nav className="pointer-events-auto w-full max-w-lg bg-white/80 dark:bg-slate-900/85 backdrop-blur-2xl backdrop-saturate-150 border border-white/60 dark:border-white/15 rounded-3xl p-1.5 shadow-[0_16px_45px_rgba(0,0,0,0.18),0_2px_8px_rgba(0,0,0,0.06),inset_0_1px_1px_rgba(255,255,255,0.95)] flex items-center justify-around">
+              
+              {/* Acceso 1: Panel */}
+              {(() => {
+                const isActive = activeTab === 'tablero';
+                return (
+                  <button
+                    onClick={() => handleTabChange('tablero')}
+                    className={`relative flex-1 flex flex-col items-center justify-center py-1.5 px-2 h-[58px] rounded-2xl transition-all duration-200 cursor-pointer select-none active:scale-90 ${
+                      isActive 
+                        ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/25 font-bold scale-[1.03]' 
+                        : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100/60 font-semibold'
+                    }`}
+                  >
+                    <LayoutDashboard className={`w-5 h-5 transition-transform duration-200 ${isActive ? 'scale-110 text-emerald-400' : 'text-slate-500'}`} />
+                    <span className={`text-[10px] tracking-tight mt-1 truncate ${isActive ? 'text-white font-black' : 'text-slate-500 font-bold'}`}>
+                      Panel
+                    </span>
+                    {isActive && <span className="w-3 h-0.5 rounded-full bg-emerald-400 mt-0.5" />}
+                  </button>
+                );
+              })()}
+
+              {/* Acceso 2: Personal */}
+              {(() => {
+                const isActive = activeTab === 'personal';
+                return (
+                  <button
+                    onClick={() => handleTabChange('personal')}
+                    className={`relative flex-1 flex flex-col items-center justify-center py-1.5 px-2 h-[58px] rounded-2xl transition-all duration-200 cursor-pointer select-none active:scale-90 ${
+                      isActive 
+                        ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/25 font-bold scale-[1.03]' 
+                        : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100/60 font-semibold'
+                    }`}
+                  >
+                    <Users className={`w-5 h-5 transition-transform duration-200 ${isActive ? 'scale-110 text-emerald-400' : 'text-slate-500'}`} />
+                    <span className={`text-[10px] tracking-tight mt-1 truncate ${isActive ? 'text-white font-black' : 'text-slate-500 font-bold'}`}>
+                      Personal
+                    </span>
+                    {isActive && <span className="w-3 h-0.5 rounded-full bg-emerald-400 mt-0.5" />}
+                  </button>
+                );
+              })()}
+
+              {/* Acceso 3: Gastos */}
+              {(() => {
+                const isActive = activeTab === 'gastos';
+                return (
+                  <button
+                    onClick={() => handleTabChange('gastos')}
+                    className={`relative flex-1 flex flex-col items-center justify-center py-1.5 px-2 h-[58px] rounded-2xl transition-all duration-200 cursor-pointer select-none active:scale-90 ${
+                      isActive 
+                        ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/25 font-bold scale-[1.03]' 
+                        : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100/60 font-semibold'
+                    }`}
+                  >
+                    <DollarSign className={`w-5 h-5 transition-transform duration-200 ${isActive ? 'scale-110 text-emerald-400' : 'text-slate-500'}`} />
+                    <span className={`text-[10px] tracking-tight mt-1 truncate ${isActive ? 'text-white font-black' : 'text-slate-500 font-bold'}`}>
+                      Gastos
+                    </span>
+                    {isActive && <span className="w-3 h-0.5 rounded-full bg-emerald-400 mt-0.5" />}
+                  </button>
+                );
+              })()}
+
+              {/* Acceso 4: Tareas */}
+              {(() => {
+                const isActive = activeTab === 'tareas';
+                return (
+                  <button
+                    onClick={() => handleTabChange('tareas')}
+                    className={`relative flex-1 flex flex-col items-center justify-center py-1.5 px-2 h-[58px] rounded-2xl transition-all duration-200 cursor-pointer select-none active:scale-90 ${
+                      isActive 
+                        ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/25 font-bold scale-[1.03]' 
+                        : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100/60 font-semibold'
+                    }`}
+                  >
+                    <CheckSquare className={`w-5 h-5 transition-transform duration-200 ${isActive ? 'scale-110 text-emerald-400' : 'text-slate-500'}`} />
+                    <span className={`text-[10px] tracking-tight mt-1 truncate ${isActive ? 'text-white font-black' : 'text-slate-500 font-bold'}`}>
+                      Tareas
+                    </span>
+                    {isActive && <span className="w-3 h-0.5 rounded-full bg-emerald-400 mt-0.5" />}
+                  </button>
+                );
+              })()}
+
+              {/* Acceso 5: Menú / Más / Módulo Activo */}
+              {(() => {
+                const isPrimary = ['tablero', 'personal', 'gastos', 'tareas'].includes(activeTab);
+                const activeSecondaryItem = !isPrimary ? navItems.find(i => i.id === activeTab) : null;
+                const Icon = activeSecondaryItem ? activeSecondaryItem.icon : LayoutGrid;
+                const label = activeSecondaryItem ? activeSecondaryItem.label.split(' ')[0] : 'Menú';
+                const isActive = !isPrimary;
+
+                return (
+                  <button
+                    onClick={() => setIsMobileLauncherOpen(true)}
+                    className={`relative flex-1 flex flex-col items-center justify-center py-1.5 px-2 h-[58px] rounded-2xl transition-all duration-200 cursor-pointer select-none active:scale-90 ${
+                      isActive 
+                        ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/25 font-bold scale-[1.03]' 
+                        : isMobileLauncherOpen
+                        ? 'bg-slate-200 text-slate-900 font-bold'
+                        : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100/60 font-semibold'
+                    }`}
+                    title="Ver todos los módulos"
+                  >
+                    <div className="relative">
+                      <Icon className={`w-5 h-5 transition-transform duration-200 ${isActive ? 'scale-110 text-emerald-400' : 'text-slate-600'}`} />
+                      {!isPrimary && (
+                        <span className="absolute -top-1 -right-1 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                      )}
+                    </div>
+                    <span className={`text-[10px] tracking-tight mt-1 truncate ${isActive ? 'text-white font-black' : 'text-slate-600 font-bold'}`}>
+                      {label}
+                    </span>
+                    {isActive ? (
+                      <span className="w-3 h-0.5 rounded-full bg-emerald-400 mt-0.5" />
+                    ) : (
+                      <span className="text-[8px] font-mono text-slate-400 font-black tracking-widest leading-none mt-0.5">•••</span>
+                    )}
+                  </button>
+                );
+              })()}
+
+            </nav>
+          </div>
+        )}
+
+        {/* ======================================================== */}
+        {/* APPLE LIQUID GLASS MOBILE LAUNCHPAD SHEET (DRAWER)       */}
+        {/* ======================================================== */}
+        {isMobileLauncherOpen && (
+          <div className="lg:hidden fixed inset-0 z-50 flex flex-col justify-end animate-fade-in">
+            {/* Backdrop con desenfoque extremo Liquid Glass */}
+            <div 
+              className="absolute inset-0 bg-slate-950/60 backdrop-blur-md transition-opacity"
+              onClick={() => setIsMobileLauncherOpen(false)}
+            />
+
+            {/* Hoja Deslizable Liquid Glass */}
+            <div className="relative w-full bg-white/90 dark:bg-slate-900/95 backdrop-blur-3xl backdrop-saturate-200 border-t border-x border-white/60 dark:border-white/10 rounded-t-[36px] shadow-[0_-12px_45px_rgba(0,0,0,0.25)] p-5 sm:p-6 max-h-[85vh] overflow-y-auto no-scrollbar animate-slide-in-bottom">
+              
+              {/* Grabber Handle de Apple */}
+              <div className="w-12 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto mb-4" />
+
+              {/* Cabecera del Menú */}
+              <div className="flex items-center justify-between pb-4 border-b border-slate-200/70 dark:border-slate-800">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 text-white flex items-center justify-center font-black text-base shadow-sm border border-white/20">
+                    {companyName ? companyName.charAt(0).toUpperCase() : 'O'}
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 dark:text-white tracking-tight">
+                      Módulos de la Oficina
+                    </h3>
+                    <p className="text-xs text-slate-500 font-medium">
+                      {companyName || 'Mi Oficina'} &bull; v{appVersion}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setIsMobileLauncherOpen(false)}
+                  className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors cursor-pointer"
+                  title="Cerrar menú"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Parrilla de Aplicaciones / Módulos estilo Apple Launchpad */}
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 py-5">
+                {navItems.map((item) => {
                   const Icon = item.icon;
                   const isActive = activeTab === item.id;
+                  
+                  const getTileTheme = (id: string) => {
+                    switch (id) {
+                      case 'tablero': return 'from-blue-500/10 to-indigo-500/10 text-blue-600 border-blue-200/60';
+                      case 'personal': return 'from-purple-500/10 to-pink-500/10 text-purple-600 border-purple-200/60';
+                      case 'autos': return 'from-amber-500/10 to-orange-500/10 text-amber-600 border-amber-200/60';
+                      case 'gastos': return 'from-emerald-500/10 to-teal-500/10 text-emerald-600 border-emerald-200/60';
+                      case 'tareas': return 'from-cyan-500/10 to-sky-500/10 text-sky-600 border-sky-200/60';
+                      case 'formatos': return 'from-emerald-500/10 to-green-500/10 text-emerald-700 border-emerald-300/60';
+                      case 'pagares': return 'from-indigo-500/10 to-violet-500/10 text-indigo-700 border-indigo-200/60';
+                      case 'fallos': return 'from-rose-500/10 to-red-500/10 text-rose-600 border-rose-200/60';
+                      case 'mascota': return 'from-amber-500/10 to-yellow-500/10 text-amber-600 border-amber-200/60';
+                      case 'imprenta': return 'from-slate-500/10 to-zinc-500/10 text-slate-700 border-slate-200/60';
+                      case 'ajustes': return 'from-slate-500/10 to-gray-500/10 text-slate-800 border-slate-200/60';
+                      default: return 'from-slate-500/10 to-slate-500/10 text-slate-700 border-slate-200/60';
+                    }
+                  };
+
+                  const theme = getTileTheme(item.id);
+
                   return (
                     <button
                       key={item.id}
-                      onClick={() => handleTabChange(item.id)}
-                      className={`relative flex flex-col items-center justify-center py-2 px-3 sm:px-4 min-w-[64px] sm:min-w-[72px] h-[60px] rounded-2xl transition-all duration-200 cursor-pointer select-none active:scale-90 shrink-0 ${
-                        isActive 
-                          ? 'bg-slate-900 text-white shadow-md shadow-slate-900/25 font-bold scale-[1.03]' 
-                          : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100/60 font-semibold'
+                      onClick={() => {
+                        handleTabChange(item.id);
+                        setIsMobileLauncherOpen(false);
+                      }}
+                      className={`relative p-3.5 rounded-2xl flex flex-col items-center justify-center gap-2 border transition-all duration-200 select-none active:scale-90 group cursor-pointer ${
+                        isActive
+                          ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/20 border-slate-900 ring-2 ring-emerald-400'
+                          : 'bg-white/70 hover:bg-white border-slate-200/80 hover:border-slate-300 shadow-2xs hover:shadow-xs'
                       }`}
                     >
-                      <div className="relative">
-                        <Icon className={`w-5 h-5 transition-transform duration-200 ${isActive ? 'scale-110 text-emerald-400' : 'text-slate-500'}`} />
-                        {isActive && (
-                          <span className="absolute -top-1 -right-1 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
-                        )}
+                      <div className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110 shadow-2xs ${
+                        isActive ? 'bg-white/20 text-emerald-400' : `bg-gradient-to-br ${theme}`
+                      }`}>
+                        <Icon className="w-5 h-5" />
                       </div>
-                      <span className={`text-[10px] tracking-tight mt-1 truncate max-w-[64px] ${isActive ? 'text-white font-black' : 'text-slate-500 font-bold'}`}>
-                        {item.label.split(' ')[0]}
+
+                      <span className={`text-[11px] font-bold text-center leading-tight truncate w-full ${
+                        isActive ? 'text-white font-black' : 'text-slate-800'
+                      }`}>
+                        {item.label}
                       </span>
+
                       {isActive && (
-                        <span className="w-4 h-0.5 rounded-full bg-emerald-400 mt-0.5"></span>
+                        <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.2 rounded-full bg-emerald-400 text-slate-950">
+                          Activo
+                        </span>
                       )}
                     </button>
                   );
                 })}
-            </nav>
+              </div>
+
+              {/* Pie de Usuario y Conexión */}
+              <div className="pt-4 border-t border-slate-200/70 dark:border-slate-800 flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 font-black text-xs">
+                    {currentUser?.firstName?.charAt(0) || 'U'}
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-slate-900 leading-tight">
+                      {currentUser?.firstName} {currentUser?.lastName}
+                    </p>
+                    <p className="text-[10px] text-slate-400">
+                      {currentUser?.position || 'Colaborador'} &bull; {isOnline ? 'En línea' : 'Sin conexión'}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleLogout}
+                  className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Salir</span>
+                </button>
+              </div>
+
+            </div>
           </div>
         )}
       </main>
