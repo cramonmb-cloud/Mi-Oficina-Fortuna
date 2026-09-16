@@ -2368,7 +2368,7 @@ export const Formatos: React.FC<FormatosProps> = ({
                     <img 
                       src={effectiveFormatLogo} 
                       alt="Logo de Formatos" 
-                      className="max-h-24 max-w-full object-contain"
+                      className="max-h-28 max-w-full object-contain"
                     />
                   </div>
                 ) : (
@@ -2377,28 +2377,6 @@ export const Formatos: React.FC<FormatosProps> = ({
                     <span className="text-xs font-semibold">Sin logotipo asignado</span>
                   </div>
                 )}
-
-                <div className="mt-4 flex items-center gap-2">
-                  {formatLogoUrl ? (
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                      Logotipo Exclusivo de Formatos Activo
-                    </span>
-                  ) : companyLogoUrl ? (
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200">
-                      Usando logotipo general de la empresa
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
-                      Sin logotipo configurado
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Mensaje explicativo */}
-              <div className="p-3.5 bg-sky-50/80 rounded-xl border border-sky-100 text-xs text-sky-800 leading-relaxed">
-                <strong>¿Cómo funciona?</strong> Si subes un logotipo aquí, se aplicará automáticamente en todos los machotes y descargas PDF de Formatos y Documentos sin afectar el logotipo principal de Mi Oficina en contratos u otras secciones.
               </div>
 
               {/* Hidden file input */}
