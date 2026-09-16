@@ -29,8 +29,10 @@ import {
   saveDailyBirthdayVideo,
   subscribeToVacationRequests
 } from '../services/dbService';
+import { AppleClockWeatherWidget } from './AppleClockWeatherWidget';
 
 interface ModuleVisibility {
+  appleClockWeather?: boolean;
   weeklyPermits: boolean;
   priorityTasks: boolean;
   upcomingDeliveries: boolean;
@@ -42,6 +44,7 @@ interface ModuleVisibility {
 }
 
 const DEFAULT_VISIBILITY: ModuleVisibility = {
+  appleClockWeather: true,
   weeklyPermits: true,
   priorityTasks: true,
   upcomingDeliveries: true,
@@ -522,6 +525,11 @@ La mascota salta de alegría sonriendo a la cámara, rodeada de confeti brillant
         </div>
       </div>
       
+      {/* Reloj Digital Tipo Apple y Clima de Ciudad Guzmán */}
+      {visibleModules.appleClockWeather !== false && (
+        <AppleClockWeatherWidget />
+      )}
+
       {/* Birthday Special Section */}
       {displayPerson && (
         <div className="bg-slate-900 rounded-2xl shadow-sm text-white overflow-hidden relative transition-all">
@@ -1048,6 +1056,7 @@ La mascota salta de alegría sonriendo a la cámara, rodeada de confeti brillant
                 <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Módulos Principales</div>
                 
                 {[
+                  { key: 'appleClockWeather', label: 'Reloj y Clima en Vivo', desc: 'Reloj digital tipo Apple y clima de Ciudad Guzmán' },
                   { key: 'weeklyPermits', label: 'Calendario Semanal de Permisos', desc: 'Vacaciones y ausencias de la semana' },
                   { key: 'priorityTasks', label: 'Tareas Prioritarias', desc: 'Alertas de tareas urgentes' },
                   { key: 'upcomingDeliveries', label: 'Próximas Entregas', desc: 'Entregas programadas cercanas' },
