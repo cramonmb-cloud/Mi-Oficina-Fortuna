@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   Clock, 
   MapPin, 
@@ -12,9 +12,36 @@ import {
   Droplets, 
   Thermometer, 
   RefreshCw,
-  Sparkles,
   Laptop
 } from 'lucide-react';
+
+export interface WeatherLocation {
+  id: string;
+  name: string;
+  shortName: string;
+  state: string;
+  latitude: number;
+  longitude: number;
+}
+
+export const WEATHER_LOCATIONS: WeatherLocation[] = [
+  {
+    id: 'guzman',
+    name: 'Ciudad Guzmán',
+    shortName: 'Cd. Guzmán',
+    state: 'Jalisco, México',
+    latitude: 19.7047,
+    longitude: -103.4617
+  },
+  {
+    id: 'autlan',
+    name: 'Autlán de Navarro',
+    shortName: 'Autlán',
+    state: 'Jalisco, México',
+    latitude: 19.7725,
+    longitude: -104.3644
+  }
+];
 
 interface WeatherData {
   temperature: number;
@@ -143,12 +170,20 @@ export const AppleClockWeatherWidget: React.FC = () => {
   const yearNumber = now.getFullYear();
 
   // ==========================================
-  // 2. CLIMA EN VIVO: CIUDAD GUZMÁN, JALISCO
+  // 2. CLIMA EN VIVO: CD. GUZMÁN / AUTLÁN
   // ==========================================
-  // Coordenadas Ciudad Guzmán: Lat 19.7047, Lon -103.4617
+  const [selectedLocationId, setSelectedLocationId] = useState<string>(() => {
+    return localStorage.getItem('dashboard_weather_location') || 'guzman';
+  });
+
+  const currentLocation = useMemo(() => {
+    return WEATHER_LOCATIONS.find(loc => loc.id === selectedLocationId) || WEATHER_LOCATIONS[0];
+  }, [selectedLocationId]);
+
   const [weather, setWeather] = useState<WeatherData | null>(() => {
     try {
-      const cached = localStorage.getItem('guzman_weather_cache');
+      const initialLocId = localStorage.getItem('dashboard_weather_location') || 'guzman';
+      const cached = localStorage.getItem(`weather_cache_${initialLocId}`) || localStorage.getItem('guzman_weather_cache');
       if (cached) return JSON.parse(cached);
     } catch {
       // ignore
@@ -159,11 +194,11 @@ export const AppleClockWeatherWidget: React.FC = () => {
   const [isLoadingWeather, setIsLoadingWeather] = useState<boolean>(false);
   const [weatherError, setWeatherError] = useState<string | null>(null);
 
-  const fetchWeather = useCallback(async () => {
+  const fetchWeather = useCallback(async (loc: WeatherLocation = currentLocation) => {
     setIsLoadingWeather(true);
     setWeatherError(null);
     try {
-      const url = 'https://api.open-meteo.com/v1/forecast?latitude=19.7047&longitude=-103.4617&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min&timezone=auto';
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min&timezone=auto`;
       const res = await fetch(url);
       if (!res.ok) throw new Error('No se pudo obtener el pronóstico');
       const data = await res.json();
@@ -181,19 +216,38 @@ export const AppleClockWeatherWidget: React.FC = () => {
       };
 
       setWeather(newWeather);
-      localStorage.setItem('guzman_weather_cache', JSON.stringify(newWeather));
+      localStorage.setItem(`weather_cache_${loc.id}`, JSON.stringify(newWeather));
     } catch (err: any) {
-      console.error('Error fetching Ciudad Guzman weather:', err);
+      console.error(`Error fetching ${loc.name} weather:`, err);
       setWeatherError('Error al actualizar');
     } finally {
       setIsLoadingWeather(false);
     }
-  }, []);
+  }, [currentLocation]);
+
+  // Al cambiar de ubicación, cargar inmediatamente caché de esa ubicación y refrescar
+  const handleSelectLocation = (newLocId: string) => {
+    if (newLocId === selectedLocationId) return;
+    setSelectedLocationId(newLocId);
+    localStorage.setItem('dashboard_weather_location', newLocId);
+
+    const targetLoc = WEATHER_LOCATIONS.find(l => l.id === newLocId) || WEATHER_LOCATIONS[0];
+    try {
+      const cached = localStorage.getItem(`weather_cache_${newLocId}`);
+      if (cached) {
+        setWeather(JSON.parse(cached));
+      }
+    } catch {
+      // ignore
+    }
+
+    fetchWeather(targetLoc);
+  };
 
   useEffect(() => {
     fetchWeather();
     // Actualización periódica cada 15 minutos
-    const interval = setInterval(fetchWeather, 15 * 60 * 1000);
+    const interval = setInterval(() => fetchWeather(), 15 * 60 * 1000);
     return () => clearInterval(interval);
   }, [fetchWeather]);
 
@@ -285,7 +339,7 @@ export const AppleClockWeatherWidget: React.FC = () => {
       </div>
 
       {/* ======================================================== */}
-      {/* CARD 2: CLIMA EN VIVO - CIUDAD GUZMÁN, JALISCO (5 COLS)   */}
+      {/* CARD 2: CLIMA EN VIVO - SELECTOR CD. GUZMÁN / AUTLÁN      */}
       {/* ======================================================== */}
       <div className="md:col-span-5 relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950 text-white p-5 sm:p-6 shadow-xl border border-slate-800/80 flex flex-col justify-between group">
         
@@ -294,30 +348,55 @@ export const AppleClockWeatherWidget: React.FC = () => {
           weather?.isDay ? 'bg-amber-500/15 group-hover:bg-amber-500/20' : 'bg-indigo-500/15 group-hover:bg-indigo-500/20'
         }`}></div>
 
-        {/* Header de Ubicación */}
+        {/* Header de Ubicación y Selector de Financiera / Municipio */}
         <div className="flex items-center justify-between gap-2 relative z-10">
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
             <div className="p-1.5 rounded-lg bg-white/10 backdrop-blur-xs text-white">
               <MapPin className="w-3.5 h-3.5 text-rose-400" />
             </div>
             <div>
-              <h4 className="text-xs font-black text-white tracking-wide">
-                Ciudad Guzmán
+              <h4 className="text-xs font-black text-white tracking-wide leading-tight">
+                {currentLocation.name}
               </h4>
               <p className="text-[10px] font-bold text-slate-400">
-                Jalisco, México
+                {currentLocation.state}
               </p>
             </div>
           </div>
 
-          <button
-            onClick={fetchWeather}
-            disabled={isLoadingWeather}
-            className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-all disabled:opacity-50 cursor-pointer"
-            title="Actualizar clima ahora"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoadingWeather ? 'animate-spin text-emerald-400' : ''}`} />
-          </button>
+          <div className="flex items-center gap-1.5">
+            {/* Selector Segmentado Estilo Apple */}
+            <div className="flex items-center bg-white/10 p-0.5 rounded-xl backdrop-blur-md border border-white/10">
+              {WEATHER_LOCATIONS.map(loc => {
+                const isActive = loc.id === selectedLocationId;
+                return (
+                  <button
+                    key={loc.id}
+                    type="button"
+                    onClick={() => handleSelectLocation(loc.id)}
+                    className={`px-2 py-0.5 text-[10px] font-bold rounded-lg transition-all cursor-pointer ${
+                      isActive 
+                        ? 'bg-white text-slate-900 shadow-xs font-black' 
+                        : 'text-slate-300 hover:text-white'
+                    }`}
+                    title={`Ver clima de ${loc.name}, Jalisco`}
+                  >
+                    {loc.shortName}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Botón de Refresco Manual */}
+            <button
+              onClick={() => fetchWeather(currentLocation)}
+              disabled={isLoadingWeather}
+              className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-all disabled:opacity-50 cursor-pointer"
+              title="Actualizar clima ahora"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingWeather ? 'animate-spin text-emerald-400' : ''}`} />
+            </button>
+          </div>
         </div>
 
         {/* Centro: Temperatura y Estado */}
@@ -339,7 +418,7 @@ export const AppleClockWeatherWidget: React.FC = () => {
           </div>
         </div>
 
-        {/* Pie: Métricas Climatológicas (Sensación, Humedad, Viento, Rango) */}
+        {/* Pie: Métricas Climatológicas (Sensación, Humedad, Viento) */}
         <div className="grid grid-cols-3 gap-2 pt-3 border-t border-slate-800/80 text-[10px] text-slate-400 relative z-10">
           <div className="flex flex-col">
             <span className="text-slate-500 font-bold uppercase text-[9px] flex items-center gap-1">
