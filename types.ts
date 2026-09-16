@@ -145,6 +145,12 @@ export enum TaskStatus {
   DONE = 'Completado'
 }
 
+export interface TaskStep {
+  id: string;
+  title: string;
+  completed: boolean;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -156,6 +162,11 @@ export interface Task {
   attachmentUrl?: string; // Archivo adjunto al crear la tarea
   deliveryUrl?: string;   // Archivo de entrega al finalizar la tarea
   deliveredAt?: string;   // Fecha de entrega
+  isImportant?: boolean;  // Marcada como importante (Microsoft To Do)
+  isMyDay?: boolean;      // Agregada a Mi Día (Microsoft To Do)
+  steps?: TaskStep[];     // Sub-pasos estilo Microsoft To Do
+  category?: string;      // Lista o categoría personalizada
+  createdAt?: string;
 }
 
 export interface AiInsight {

@@ -747,7 +747,7 @@ function App() {
       case 'personal': return <Personnel employees={employees} plazas={plazas} isLoading={!hasLoadedEmployees} currentUser={currentUser} companyName={companyName} companyLogoUrl={companyLogoUrl} companyRfc={companyRfc} companyAddress={companyAddress} companyPhone={companyPhone} showCompanyInfoOnCredential={showCompanyInfoOnCredential} />;
       case 'autos': return <Vehicles employees={employees} vehicles={vehicles} assignments={vehicleAssignments} events={vehicleEvents} isLoading={!hasLoadedVehicles} companyName={companyName} />;
       case 'gastos': return <Expenses expenses={expenses} employees={employees} isLoading={!hasLoadedExpenses} loadAll={loadAllExpenses} isSyncing={isSyncingExpenses} onLoadAll={() => { setLoadAllExpenses(true); setIsSyncingExpenses(true); }} multiOfficeEnabled={multiOfficeEnabled} currentUser={currentUser} />;
-      case 'tareas': return <Tasks tasks={tasks} employees={employees} isLoading={!hasLoadedTasks} />;
+      case 'tareas': return <Tasks tasks={tasks} employees={employees} isLoading={!hasLoadedTasks} currentUser={currentUser} />;
       case 'pagares': return <PromissoryNotes companyName={companyName} />;
       case 'formatos': return <Formatos companyName={companyName} companyLogoUrl={companyLogoUrl} companyRfc={companyRfc} companyAddress={companyAddress} companyPhone={companyPhone} employees={employees} plazas={plazas} currentUser={currentUser} />;
       case 'fallos': return <Fallos currentUser={currentUser} employees={employees} fallos={fallos} isLoading={!hasLoadedFallos} loadAll={loadAllFallos} isSyncing={isSyncingFallos} onLoadAll={() => { setLoadAllFallos(true); setIsSyncingFallos(true); }} />;
