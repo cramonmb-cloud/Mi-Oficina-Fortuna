@@ -414,7 +414,11 @@ export const saveEmployeesBatch = async (employees: Omit<Employee, 'id'>[]) => {
     const batch = writeBatch(db);
     chunk.forEach(emp => {
       const docRef = doc(collection(db, "employees")); // Auto-ID
-      batch.set(docRef, emp);
+      const credentialCode = emp.credentialCode || generateUniqueCredentialCode();
+      batch.set(docRef, {
+        ...emp,
+        credentialCode
+      });
     });
     await batch.commit();
   }

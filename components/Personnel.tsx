@@ -1,8 +1,23 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Trash2, Phone, Mail, User, MapPin, Filter, Layers, Pencil, Lock, Search, X, Building, Link as LinkIcon, FileSpreadsheet, UploadCloud, AlertTriangle, Download, CheckCircle, RefreshCcw, Users, Clipboard, LayoutGrid, Table, Cake, Loader2, FileText, Calendar, Umbrella, Coins, Clock, Check, AlertCircle, MessageSquare, CreditCard, QrCode, Upload, Copy, ExternalLink, ShieldCheck, Eye, Activity, Briefcase } from 'lucide-react';
+import { Plus, Trash2, Phone, Mail, User, MapPin, Filter, Layers, Pencil, Lock, Search, X, Building, Link as LinkIcon, FileSpreadsheet, UploadCloud, AlertTriangle, Download, CheckCircle, RefreshCcw, Users, Clipboard, LayoutGrid, Table, Cake, Loader2, FileText, Calendar, Umbrella, Coins, Clock, Check, AlertCircle, MessageSquare, CreditCard, QrCode, Upload, Copy, ExternalLink, ShieldCheck, Eye, Activity, Briefcase, Shield, CheckSquare, Square, Sparkles } from 'lucide-react';
 import { Employee, PersonnelCategory, Plaza, VacationRequest, EmployeeContract } from '../types';
-import { addEmployee, deleteEmployee, updateEmployee, addPlaza, deletePlaza, deleteAllEmployees, saveEmployeesBatch, subscribeToVacationRequests, addVacationRequest, updateVacationRequest, deleteVacationRequest, subscribeToEmployeeContracts } from '../services/dbService';
+import { addEmployee, deleteEmployee, updateEmployee, addPlaza, deletePlaza, saveEmployeesBatch, subscribeToVacationRequests, addVacationRequest, updateVacationRequest, deleteVacationRequest, subscribeToEmployeeContracts } from '../services/dbService';
+
+export interface ComplementedField {
+  field: keyof Employee | 'guarantorName' | 'guarantorPhone' | 'guarantorAddress';
+  label: string;
+  oldValue: string;
+  newValue: string;
+}
+
+export interface ImportMatchItem {
+  existing: Employee;
+  parsed: Partial<Employee>;
+  matchReason: string;
+  fieldsToComplement: ComplementedField[];
+  selected: boolean;
+}
 import { VacationsControl } from './VacationsControl';
 import { VacationsBalancesTable } from './VacationsBalancesTable';
 import { ContractsControl } from './ContractsControl';
@@ -51,7 +66,11 @@ const INITIAL_FORM_STATE = {
   civilStatus: 'Soltero(a)',
   nationality: 'Mexicana',
   gender: 'masculino',
-  salary: ''
+  salary: '',
+  // Aval / Guarantor fields
+  guarantorName: '',
+  guarantorAddress: '',
+  guarantorPhone: ''
 };
 
 import { getLocalDateString } from '../lib/dateUtils';
@@ -117,7 +136,11 @@ export const Personnel: React.FC<PersonnelProps> = ({
   // Import State
   const [importStep, setImportStep] = useState<'upload' | 'review' | 'processing' | 'success'>('upload');
   const [importedData, setImportedData] = useState<Partial<Employee>[]>([]);
-  const [duplicateCount, setDuplicateCount] = useState(0);
+  const [importMatches, setImportMatches] = useState<ImportMatchItem[]>([]);
+  const [importNewEmployees, setImportNewEmployees] = useState<Partial<Employee>[]>([]);
+  const [reviewTab, setReviewTab] = useState<'matches' | 'new'>('matches');
+  const [includeNewEmployees, setIncludeNewEmployees] = useState(true);
+  const [importStats, setImportStats] = useState({ updated: 0, added: 0 });
   const [importMode, setImportMode] = useState<'file' | 'paste'>('file');
   const [pasteContent, setPasteContent] = useState('');
   const [importSupervisorId, setImportSupervisorId] = useState('');
@@ -142,6 +165,168 @@ export const Personnel: React.FC<PersonnelProps> = ({
         return nameA.localeCompare(nameB);
       });
   }, [employees]);
+
+  const FIELD_LABELS: Record<string, string> = {
+    guarantorName: 'Nombre del Aval',
+    guarantorPhone: 'Teléfono del Aval',
+    guarantorAddress: 'Domicilio del Aval',
+    curp: 'CURP',
+    phone: 'Teléfono',
+    email: 'WhatsApp / Contacto',
+    accessCode: 'PIN de Acceso',
+    address: 'Domicilio Particular',
+    birthDate: 'Fecha de Nacimiento',
+    gender: 'Género',
+    civilStatus: 'Estado Civil',
+    nationality: 'Nacionalidad',
+    salary: 'Salario',
+    plaza: 'Plaza',
+    position: 'Puesto',
+    hireDate: 'Fecha de Ingreso',
+    groupName: 'Grupo',
+    supervisionName: 'Supervisión'
+  };
+
+  const normalizeCleanStr = (str?: string) => {
+    if (!str) return '';
+    return str
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]/g, "")
+      .trim();
+  };
+
+  const normalizeCleanPhone = (phone?: string) => {
+    if (!phone) return '';
+    return phone.replace(/\D/g, '').slice(-10);
+  };
+
+  const findMatchingEmployee = (parsed: Partial<Employee>, existingEmployees: Employee[]): { match: Employee | null; reason: string } => {
+    // 1. CURP Match (at least 10 chars)
+    const parsedCurp = normalizeCleanStr(parsed.curp);
+    if (parsedCurp.length >= 10) {
+      const byCurp = existingEmployees.find(e => {
+        const eCurp = normalizeCleanStr(e.curp);
+        return eCurp.length >= 10 && eCurp === parsedCurp;
+      });
+      if (byCurp) return { match: byCurp, reason: `CURP coincidente (${byCurp.curp})` };
+    }
+
+    // 2. Phone Match (10 digits)
+    const parsedPhone = normalizeCleanPhone(parsed.email || parsed.phone);
+    if (parsedPhone.length === 10) {
+      const byPhone = existingEmployees.find(e => {
+        const ePhone = normalizeCleanPhone(e.phone || e.email);
+        return ePhone.length === 10 && ePhone === parsedPhone;
+      });
+      if (byPhone) return { match: byPhone, reason: `Teléfono coincidente (${parsedPhone})` };
+    }
+
+    // 3. Name Match (Accent and case-insensitive, token permutation friendly)
+    const parsedFirst = normalizeCleanStr(parsed.firstName);
+    const parsedLast = normalizeCleanStr(parsed.lastName);
+    const parsedFull = `${parsedFirst}${parsedLast}`.trim();
+
+    if (parsedFull.length >= 4) {
+      // 3a. Exact combined match
+      const exact = existingEmployees.find(e => {
+        const eFull = `${normalizeCleanStr(e.firstName)}${normalizeCleanStr(e.lastName)}`.trim();
+        const eReverse = `${normalizeCleanStr(e.lastName)}${normalizeCleanStr(e.firstName)}`.trim();
+        return eFull === parsedFull || eReverse === parsedFull;
+      });
+      if (exact) {
+        return { match: exact, reason: `Nombre coincidente (${exact.firstName} ${exact.lastName})` };
+      }
+
+      // 3b. Token-based word match (handles "ALCALA SEGOVIANO YESENIA" vs "YESENIA ALCALA SEGOVIANO")
+      const parsedTokens = `${parsed.firstName || ''} ${parsed.lastName || ''}`
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9\s]/g, " ")
+        .split(/\s+/)
+        .filter(t => t.length > 2);
+
+      if (parsedTokens.length >= 2) {
+        const tokenMatch = existingEmployees.find(e => {
+          const eTokens = `${e.firstName || ''} ${e.lastName || ''}`
+            .toLowerCase()
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .replace(/[^a-z0-9\s]/g, " ")
+            .split(/\s+/)
+            .filter(t => t.length > 2);
+
+          if (eTokens.length < 2) return false;
+          return parsedTokens.every(t => eTokens.includes(t)) || eTokens.every(t => parsedTokens.includes(t));
+        });
+
+        if (tokenMatch) {
+          return { match: tokenMatch, reason: `Nombre similar (${tokenMatch.firstName} ${tokenMatch.lastName})` };
+        }
+      }
+    }
+
+    return { match: null, reason: '' };
+  };
+
+  const computeFieldComplements = (existing: Employee, parsed: Partial<Employee>): ComplementedField[] => {
+    const complements: ComplementedField[] = [];
+
+    Object.entries(FIELD_LABELS).forEach(([key, label]) => {
+      const newVal = String((parsed as any)[key] || '').trim();
+      const oldVal = String((existing as any)[key] || '').trim();
+
+      // If the imported record has data for this field
+      if (newVal) {
+        // If existing is missing or different
+        if (!oldVal || oldVal.toLowerCase() !== newVal.toLowerCase()) {
+          // Special case: ignore formatting differences in phone numbers if digits are identical
+          if (key === 'phone' || key === 'email' || key === 'guarantorPhone') {
+            const cleanOld = oldVal.replace(/\D/g, '').slice(-10);
+            const cleanNew = newVal.replace(/\D/g, '').slice(-10);
+            if (cleanOld && cleanOld === cleanNew) return;
+          }
+          complements.push({
+            field: key as any,
+            label,
+            oldValue: oldVal || '(Vacío)',
+            newValue: newVal
+          });
+        }
+      }
+    });
+
+    return complements;
+  };
+
+  const analyzeParsedData = (parsedList: Partial<Employee>[]) => {
+    const matches: ImportMatchItem[] = [];
+    const newEmps: Partial<Employee>[] = [];
+
+    parsedList.forEach(parsed => {
+      const { match, reason } = findMatchingEmployee(parsed, employees);
+      if (match) {
+        const complements = computeFieldComplements(match, parsed);
+        matches.push({
+          existing: match,
+          parsed,
+          matchReason: reason,
+          fieldsToComplement: complements,
+          selected: true
+        });
+      } else {
+        newEmps.push(parsed);
+      }
+    });
+
+    setImportedData(parsedList);
+    setImportMatches(matches);
+    setImportNewEmployees(newEmps);
+    setReviewTab(matches.length > 0 ? 'matches' : 'new');
+    setImportStep('review');
+  };
 
   const handlePasteAnalysis = () => {
     if (!importSupervisorId) {
@@ -207,6 +392,14 @@ export const Personnel: React.FC<PersonnelProps> = ({
           }
        }
 
+       const autoCurp = (firstName && birthDate) ? calculateCurp({
+          firstName,
+          lastName,
+          birthDate,
+          gender: 'M',
+          stateCode: 'JC'
+       }) : '';
+
        parsed.push({
           firstName,
           lastName,
@@ -215,25 +408,25 @@ export const Personnel: React.FC<PersonnelProps> = ({
           linkedExecutiveId: linkedExecutiveId,
           plaza: plaza,
           birthDate,
+          gender: 'femenino',
+          curp: autoCurp || '',
           groupName: group,
           email: '', 
           phone: '',
           position: 'Promotora',
+          status: 'ACTIVO',
+          civilStatus: 'Soltero(a)',
+          nationality: 'Mexicana',
           hireDate: getLocalDateString() 
        });
     });
 
-    setImportedData(parsed);
-    
-    // Check duplicates logic
-    const dbNames = new Set(employees.map(e => `${e.firstName.toLowerCase().trim()} ${e.lastName.toLowerCase().trim()}`));
-    const dups = parsed.filter(e => {
-        const fullName = `${(e.firstName || '').toLowerCase().trim()} ${(e.lastName || '').toLowerCase().trim()}`;
-        return dbNames.has(fullName);
-    }).length;
+    if (parsed.length === 0) {
+      alert("No se pudieron detectar registros válidos en el texto pegado.");
+      return;
+    }
 
-    setDuplicateCount(dups);
-    setImportStep('review');
+    analyzeParsedData(parsed);
   };
 
   const filteredEmployees = useMemo(() => {
@@ -284,7 +477,10 @@ export const Personnel: React.FC<PersonnelProps> = ({
         civilStatus: emp.civilStatus || 'Soltero(a)',
         nationality: emp.nationality || 'Mexicana',
         gender: emp.gender || (emp.curp && emp.curp[10] === 'M' ? 'femenino' : 'masculino'),
-        salary: emp.salary !== undefined && emp.salary !== null ? String(emp.salary) : ''
+        salary: emp.salary !== undefined && emp.salary !== null ? String(emp.salary) : '',
+        guarantorName: emp.guarantorName || '',
+        guarantorAddress: emp.guarantorAddress || '',
+        guarantorPhone: emp.guarantorPhone || ''
       });
 
       // Try extracting gender and state from existing CURP
@@ -470,7 +666,10 @@ export const Personnel: React.FC<PersonnelProps> = ({
         civilStatus: formData.civilStatus || 'Soltero(a)',
         nationality: formData.nationality || 'Mexicana',
         gender: formData.gender || (curpGender === 'M' ? 'femenino' : 'masculino'),
-        salary: formData.salary || ''
+        salary: formData.salary || '',
+        guarantorName: formData.guarantorName ? formData.guarantorName.trim() : '',
+        guarantorAddress: formData.guarantorAddress ? formData.guarantorAddress.trim() : '',
+        guarantorPhone: formData.guarantorPhone ? formData.guarantorPhone.trim() : ''
       };
 
       if (editingId) {
@@ -497,20 +696,156 @@ export const Personnel: React.FC<PersonnelProps> = ({
   };
 
   // --- IMPORT EXCEL LOGIC ---
+
+  const formatExcelDate = (val: any): string => {
+    if (!val) return '';
+    if (typeof val === 'number') {
+      // Excel serial date number
+      const date = new Date(Math.round((val - 25569) * 86400 * 1000));
+      return date.toISOString().split('T')[0];
+    }
+    const str = String(val).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(str)) {
+      const [d, m, y] = str.split('/');
+      return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+    }
+    if (/^\d{1,2}-\d{1,2}-\d{4}$/.test(str)) {
+      const [d, m, y] = str.split('-');
+      return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+    }
+    return str;
+  };
+
+  const normalizeCategory = (val: any): PersonnelCategory => {
+    const s = String(val || '').trim().toLowerCase();
+    if (s.includes('ejecutiv')) return 'Ejecutivos';
+    if (s.includes('supervis')) return 'Supervisoras';
+    if (s.includes('promot')) return 'Promotoras';
+    return 'Oficina';
+  };
+
+  const normalizeStatus = (val: any): 'ACTIVO' | 'INACTIVO' | 'BAJA' => {
+    const s = String(val || '').trim().toUpperCase();
+    if (s.includes('INACT')) return 'INACTIVO';
+    if (s.includes('BAJA')) return 'BAJA';
+    return 'ACTIVO';
+  };
+
+  const normalizeGender = (val: any, curpVal?: string): string => {
+    const s = String(val || '').trim().toUpperCase();
+    if (s === 'H' || s.startsWith('MASC') || s.startsWith('HOMB')) return 'masculino';
+    if (s === 'M' || s.startsWith('FEM') || s.startsWith('MUJ')) return 'femenino';
+    if (curpVal && curpVal.length >= 11) {
+      return curpVal[10] === 'M' ? 'femenino' : 'masculino';
+    }
+    return 'masculino';
+  };
   
   const handleDownloadTemplate = () => {
     const headers = [
-      ['Nombre', 'Apellido', 'Celular / WhatsApp', 'Puesto', 'Plaza', 'Categoría', 'Teléfono', 'Fecha Nacimiento (YYYY-MM-DD)', 'Fecha Contratación (YYYY-MM-DD)']
+      [
+        'Nombre',
+        'Apellido',
+        'Celular / WhatsApp',
+        'PIN Acceso (4 dígitos)',
+        'Puesto',
+        'Plaza',
+        'Categoría (Oficina, Ejecutivos, Supervisoras, Promotoras)',
+        'Estado Laboral (ACTIVO, INACTIVO, BAJA)',
+        'Fecha Ingreso (YYYY-MM-DD)',
+        'Fecha Nacimiento (YYYY-MM-DD)',
+        'Sexo (H/M)',
+        'CURP (18 dígitos)',
+        'Supervisión / Grupo',
+        'Domicilio Particular',
+        'Estado Civil',
+        'Nacionalidad',
+        'Salario Acordado ($)',
+        'Nombre del Aval',
+        'Teléfono del Aval',
+        'Domicilio del Aval'
+      ]
     ];
     const exampleData = [
-      ['Juan', 'Perez', '5551234567', 'Gerente', 'CDMX', 'Oficina', '5551234567', '1990-05-15', '2023-01-10'],
-      ['Maria', 'Lopez', '3339876543', 'Vendedora', 'GDL', 'Promotoras', '3339876543', '1995-10-20', '2023-03-01']
+      [
+        'Juan Carlos',
+        'Perez Gomez',
+        '3411234567',
+        '1234',
+        'Gerente Administrativo',
+        'Ciudad Guzman',
+        'Oficina',
+        'ACTIVO',
+        '2023-01-15',
+        '1990-05-20',
+        'H',
+        'PEGJ900520HJCXXXX01',
+        '',
+        'Av. Hidalgo 123, Col. Centro, CP 49000, Zapotlán el Grande, Jal.',
+        'Casado(a)',
+        'Mexicana',
+        '4500.00',
+        'Roberto Perez Mendoza',
+        '3419876543',
+        'Calle Reforma 45, Col. Centro, CP 49000'
+      ],
+      [
+        'Maria Elena',
+        'Lopez Ramirez',
+        '3419876543',
+        '4321',
+        'Promotora',
+        'Autlan',
+        'Promotoras',
+        'ACTIVO',
+        '2023-03-01',
+        '1995-10-12',
+        'M',
+        'LORM951012MJCXXXX02',
+        'Grupo Las Rosas',
+        'Calle Morelos 456, Col. Ejidal, Autlán de Navarro, Jal.',
+        'Soltero(a)',
+        'Mexicana',
+        '3000.00',
+        'Rosa Maria Ramirez',
+        '3415551234',
+        'Calle Zaragoza 78, Autlán de Navarro, Jal.'
+      ],
+      [
+        'Patricia',
+        'Hernandez Alvarez',
+        '3418889900',
+        '5678',
+        'Supervisora',
+        'Sayula',
+        'Supervisoras',
+        'ACTIVO',
+        '2022-08-10',
+        '1988-02-14',
+        'M',
+        'HEAP880214MJCXXXX03',
+        'Supervisión Sur',
+        'Av. Vallarta 789, Sayula, Jal.',
+        'Soltero(a)',
+        'Mexicana',
+        '5500.00',
+        'Carlos Hernandez',
+        '3417776655',
+        'Av. Vallarta 790, Sayula, Jal.'
+      ]
     ];
 
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([...headers, ...exampleData]);
+    ws['!cols'] = [
+      { wch: 18 }, { wch: 18 }, { wch: 20 }, { wch: 16 }, { wch: 22 },
+      { wch: 18 }, { wch: 22 }, { wch: 16 }, { wch: 16 }, { wch: 16 },
+      { wch: 12 }, { wch: 22 }, { wch: 22 }, { wch: 35 }, { wch: 15 },
+      { wch: 14 }, { wch: 16 }, { wch: 25 }, { wch: 18 }, { wch: 35 }
+    ];
     XLSX.utils.book_append_sheet(wb, ws, "Plantilla Empleados");
-    XLSX.writeFile(wb, "Plantilla_Importacion_Empleados.xlsx");
+    XLSX.writeFile(wb, "Plantilla_Importacion_Personal_Completa.xlsx");
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -526,80 +861,219 @@ export const Personnel: React.FC<PersonnelProps> = ({
         const ws = wb.Sheets[wsname];
         const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
 
-        // Transform Data
-        // Headers are row 0. We assume the order matches the template or we check columns.
-        // For simplicity, we assume fixed order: First Name, Last Name, Email, Position, Plaza, Category, Phone, Birth, Hire
-        
+        if (!data || data.length < 2) {
+          alert("El archivo no contiene filas con datos para importar.");
+          return;
+        }
+
+        // Flexible header mapping detection
+        const normalizeCol = (str: string) => 
+          str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+
+        const headerRow: string[] = ((data[0] as any[]) || []).map(c => String(c || '').trim());
+        const colMap: Record<string, number> = {};
+
+        headerRow.forEach((colName, idx) => {
+          const norm = normalizeCol(colName);
+          if (norm.includes('aval')) {
+            if (norm.includes('telefono') || norm.includes('celular') || norm.includes('whatsapp') || norm.includes('tel') || norm.includes('movil')) {
+              if (colMap['guarantorPhone'] === undefined) colMap['guarantorPhone'] = idx;
+            } else if (norm.includes('domicilio') || norm.includes('direccion') || norm.includes('calle') || norm.includes('ubicacion')) {
+              if (colMap['guarantorAddress'] === undefined) colMap['guarantorAddress'] = idx;
+            } else {
+              if (colMap['guarantorName'] === undefined) colMap['guarantorName'] = idx;
+            }
+          } else if (norm.includes('apellido') || norm.includes('lastname') || norm.includes('paterno') || norm.includes('materno')) {
+            if (colMap['lastName'] === undefined) colMap['lastName'] = idx;
+          } else if (norm.includes('nombrecompleto') || norm.includes('colaborador') || norm.includes('empleado') || norm.includes('personal') || norm.includes('trabajador')) {
+            if (colMap['fullName'] === undefined) colMap['fullName'] = idx;
+          } else if (norm.includes('nombre') || norm.includes('firstname')) {
+            if (colMap['firstName'] === undefined) colMap['firstName'] = idx;
+          } else if (norm.includes('celular') || norm.includes('whatsapp') || norm.includes('telefono') || norm.includes('movil') || norm.includes('tel')) {
+            if (colMap['email'] === undefined) colMap['email'] = idx;
+          } else if (norm.includes('pin') || norm.includes('acceso') || norm.includes('clave') || norm.includes('pass') || norm.includes('codigo')) {
+            if (colMap['accessCode'] === undefined) colMap['accessCode'] = idx;
+          } else if (norm.includes('puesto') || norm.includes('cargo') || norm.includes('position') || norm.includes('rol') || norm.includes('funcion') || norm.includes('ocupacion')) {
+            if (colMap['position'] === undefined) colMap['position'] = idx;
+          } else if (norm.includes('plaza') || norm.includes('sucursal') || norm.includes('sede') || norm.includes('ciudad') || norm.includes('zona')) {
+            if (colMap['plaza'] === undefined) colMap['plaza'] = idx;
+          } else if (norm.includes('categoria') || norm.includes('departamento') || norm.includes('depto') || norm.includes('area')) {
+            if (colMap['category'] === undefined) colMap['category'] = idx;
+          } else if ((norm.includes('estado') || norm.includes('estatus') || norm.includes('status') || norm.includes('activo')) && !norm.includes('civil')) {
+            if (colMap['status'] === undefined) colMap['status'] = idx;
+          } else if (norm.includes('ingreso') || norm.includes('contratacion') || norm.includes('alta') || norm.includes('fechainicio')) {
+            if (colMap['hireDate'] === undefined) colMap['hireDate'] = idx;
+          } else if (norm.includes('nacimiento') || norm.includes('cumple') || norm.includes('fechanac')) {
+            if (colMap['birthDate'] === undefined) colMap['birthDate'] = idx;
+          } else if (norm.includes('sexo') || norm.includes('genero') || norm.includes('gender') || norm.includes('sex')) {
+            if (colMap['gender'] === undefined) colMap['gender'] = idx;
+          } else if (norm.includes('curp')) {
+            if (colMap['curp'] === undefined) colMap['curp'] = idx;
+          } else if (norm.includes('supervision') || norm.includes('grupo') || norm.includes('equipo') || norm.includes('coordinador')) {
+            if (colMap['supervisionOrGroup'] === undefined) colMap['supervisionOrGroup'] = idx;
+          } else if (norm.includes('domicilio') || norm.includes('direccion') || norm.includes('calle') || norm.includes('vivienda')) {
+            if (colMap['address'] === undefined) colMap['address'] = idx;
+          } else if (norm.includes('civil')) {
+            if (colMap['civilStatus'] === undefined) colMap['civilStatus'] = idx;
+          } else if (norm.includes('nacionalidad') || norm.includes('pais')) {
+            if (colMap['nationality'] === undefined) colMap['nationality'] = idx;
+          } else if (norm.includes('salario') || norm.includes('sueldo') || norm.includes('pago') || norm.includes('percepcion') || norm.includes('honorario')) {
+            if (colMap['salary'] === undefined) colMap['salary'] = idx;
+          }
+        });
+
+        const hasHeaderMapping = colMap['firstName'] !== undefined || colMap['fullName'] !== undefined;
+
+        const getCol = (row: any[], field: string, fallbackIdx: number) => {
+          if (hasHeaderMapping && colMap[field] !== undefined) {
+            return row[colMap[field]];
+          }
+          return row[fallbackIdx];
+        };
+
         const parsedEmployees: Partial<Employee>[] = [];
-        
-        // Skip header row
+
+        // Process rows (skip header)
         for (let i = 1; i < data.length; i++) {
           const row: any = data[i];
-          if (!row[0]) continue; // Skip empty rows
+          if (!row || (!row[0] && !row[1] && !row[2])) continue;
+
+          let rawFirstName = String(getCol(row, 'firstName', 0) || '').trim();
+          let rawLastName = String(getCol(row, 'lastName', 1) || '').trim();
+
+          // Handle single full name column if separate last name is absent
+          if ((!rawLastName || colMap['fullName'] !== undefined) && (colMap['fullName'] !== undefined || (colMap['firstName'] !== undefined && colMap['lastName'] === undefined))) {
+            const fullNameCandidate = String(colMap['fullName'] !== undefined ? row[colMap['fullName']] : rawFirstName || '').trim();
+            if (fullNameCandidate) {
+              const nameParts = fullNameCandidate.split(/\s+/).filter(Boolean);
+              if (nameParts.length > 2) {
+                rawLastName = nameParts.slice(-2).join(' ');
+                rawFirstName = nameParts.slice(0, -2).join(' ');
+              } else if (nameParts.length === 2) {
+                rawFirstName = nameParts[0];
+                rawLastName = nameParts[1];
+              } else {
+                rawFirstName = fullNameCandidate;
+                rawLastName = '';
+              }
+            }
+          }
+
+          if (!rawFirstName && !rawLastName) continue;
+
+          const rawPhoneOrEmail = String(getCol(row, 'email', 2) || '').replace(/\D/g, '').slice(0, 10);
+          const rawPin = String(getCol(row, 'accessCode', 3) || '').replace(/\D/g, '').slice(0, 4);
+          const rawPosition = String(getCol(row, 'position', 4) || '').trim();
+          const rawPlaza = String(getCol(row, 'plaza', 5) || '').trim();
+          const category = normalizeCategory(getCol(row, 'category', 6));
+          const status = normalizeStatus(getCol(row, 'status', 7));
+          const hireDate = formatExcelDate(getCol(row, 'hireDate', 8)) || getLocalDateString();
+          const birthDate = formatExcelDate(getCol(row, 'birthDate', 9));
+          const rawGender = getCol(row, 'gender', 10);
+          let rawCurp = String(getCol(row, 'curp', 11) || '').trim().toUpperCase().slice(0, 18);
+          const gender = normalizeGender(rawGender, rawCurp);
+
+          // Auto-calculate CURP if omitted but birthDate and names present
+          if (!rawCurp && rawFirstName && birthDate) {
+            const auto = calculateCurp({
+              firstName: rawFirstName,
+              lastName: rawLastName,
+              birthDate,
+              gender: gender === 'femenino' ? 'M' : 'H',
+              stateCode: 'JC'
+            });
+            if (auto) rawCurp = auto;
+          }
+
+          const supOrGroup = String(getCol(row, 'supervisionOrGroup', 12) || '').trim();
+          const address = String(getCol(row, 'address', 13) || '').trim();
+          const civilStatus = String(getCol(row, 'civilStatus', 14) || 'Soltero(a)').trim();
+          const nationality = String(getCol(row, 'nationality', 15) || 'Mexicana').trim();
+          const salary = String(getCol(row, 'salary', 16) || '').trim();
+
+          const guarantorName = String(getCol(row, 'guarantorName', 17) || '').trim();
+          const guarantorPhone = String(getCol(row, 'guarantorPhone', 18) || '').replace(/\D/g, '').slice(0, 10);
+          const guarantorAddress = String(getCol(row, 'guarantorAddress', 19) || '').trim();
+
+          let supervisionName = '';
+          let groupName = '';
+          if (category === 'Supervisoras') {
+            supervisionName = supOrGroup;
+          } else if (category === 'Promotoras') {
+            groupName = supOrGroup;
+          }
 
           parsedEmployees.push({
-            firstName: row[0]?.toString() || '',
-            lastName: row[1]?.toString() || '',
-            email: row[2]?.toString().replace(/\D/g, '').slice(0, 10) || '',
-            position: row[3]?.toString() || '',
-            plaza: row[4]?.toString() || '',
-            category: (row[5] as PersonnelCategory) || 'Oficina',
-            phone: row[6]?.toString() || '',
-            birthDate: row[7]?.toString() || '',
-            hireDate: row[8]?.toString() || ''
+            firstName: rawFirstName,
+            lastName: rawLastName,
+            email: rawPhoneOrEmail,
+            phone: rawPhoneOrEmail,
+            accessCode: rawPin,
+            position: rawPosition || (category === 'Promotoras' ? 'Promotora' : category === 'Supervisoras' ? 'Supervisora' : 'Colaborador'),
+            plaza: rawPlaza,
+            category,
+            status,
+            hireDate,
+            birthDate,
+            gender,
+            curp: rawCurp,
+            supervisionName,
+            groupName,
+            address,
+            civilStatus,
+            nationality: nationality || 'Mexicana',
+            salary,
+            guarantorName,
+            guarantorPhone,
+            guarantorAddress
           });
         }
 
-        // Check for duplicates within the IMPORTED file
-        // (Optional: simple check for now)
-        
-        setImportedData(parsedEmployees);
-        
-        // Check duplicates against EXISTING DB
-        const dbNames = new Set(employees.map(e => `${e.firstName.toLowerCase().trim()} ${e.lastName.toLowerCase().trim()}`));
-        const dups = parsedEmployees.filter(e => {
-            const fullName = `${(e.firstName || '').toLowerCase().trim()} ${(e.lastName || '').toLowerCase().trim()}`;
-            return dbNames.has(fullName);
-        }).length;
+        if (parsedEmployees.length === 0) {
+          alert("No se encontraron filas con datos de colaboradores para importar.");
+          return;
+        }
 
-        setDuplicateCount(dups);
-        setImportStep('review');
+        analyzeParsedData(parsedEmployees);
 
       } catch (err) {
         console.error("Error parsing excel", err);
-        alert("Error al leer el archivo. Asegúrate de usar la plantilla.");
+        alert("Error al leer el archivo. Por favor verifica que sea un archivo Excel válido (.xlsx, .xls, .csv).");
       }
     };
     reader.readAsBinaryString(file);
   };
 
-  const processImport = async (mode: 'replace' | 'append') => {
+  const processImport = async () => {
     setImportStep('processing');
     try {
-      if (mode === 'replace') {
-        // 1. Delete all current data
-        await deleteAllEmployees();
-        // 2. Add all new data
-        await saveEmployeesBatch(importedData as any[]);
-      } else {
-        // Append mode: Filter duplicates to avoid double entries
-        const dbNames = new Set(employees.map(e => `${e.firstName.toLowerCase().trim()} ${e.lastName.toLowerCase().trim()}`));
-        
-        const uniqueToImport = importedData.filter(e => {
-            const fullName = `${(e.firstName || '').toLowerCase().trim()} ${(e.lastName || '').toLowerCase().trim()}`;
-            return !dbNames.has(fullName);
-        });
+      let updatedCount = 0;
+      let addedCount = 0;
 
-        if (uniqueToImport.length > 0) {
-            await saveEmployeesBatch(uniqueToImport as any[]);
+      // 1. Process selected matches safely: updateDoc preserves Firestore document ID and all related Fallos!
+      const selectedMatches = importMatches.filter(m => m.selected && m.fieldsToComplement.length > 0);
+      for (const match of selectedMatches) {
+        const updates: Partial<Employee> = {};
+        match.fieldsToComplement.forEach(f => {
+          (updates as any)[f.field] = f.newValue;
+        });
+        if (Object.keys(updates).length > 0) {
+          await updateEmployee(match.existing.id, updates);
+          updatedCount++;
         }
       }
-      
-      // Success
+
+      // 2. Process new employees if included
+      if (includeNewEmployees && importNewEmployees.length > 0) {
+        await saveEmployeesBatch(importNewEmployees as any[]);
+        addedCount = importNewEmployees.length;
+      }
+
+      setImportStats({ updated: updatedCount, added: addedCount });
       setImportStep('success');
     } catch (e) {
-      console.error(e);
-      alert("Error durante la importación masiva.");
+      console.error("Error al procesar la importación:", e);
+      alert("Ocurrió un error al aplicar los cambios. Revisa la consola.");
       setImportStep('review');
     }
   };
@@ -608,7 +1082,11 @@ export const Personnel: React.FC<PersonnelProps> = ({
     setIsImportModalOpen(false);
     setImportStep('upload');
     setImportedData([]);
-    setDuplicateCount(0);
+    setImportMatches([]);
+    setImportNewEmployees([]);
+    setReviewTab('matches');
+    setIncludeNewEmployees(true);
+    setImportStats({ updated: 0, added: 0 });
     setImportMode('file');
     setPasteContent('');
     setImportSupervisorId('');
@@ -643,23 +1121,33 @@ export const Personnel: React.FC<PersonnelProps> = ({
       'Categoría': emp.category,
       'Nombre': emp.firstName || '',
       'Apellido': emp.lastName || '',
+      'Celular / WhatsApp': emp.email || '',
+      'PIN Acceso (4 dígitos)': emp.accessCode || '',
       'Puesto': emp.position || '',
       'Plaza': emp.plaza || '',
+      'Estado Laboral': emp.status || 'ACTIVO',
+      'Fecha Ingreso (YYYY-MM-DD)': emp.hireDate || '',
+      'Fecha Nacimiento (YYYY-MM-DD)': emp.birthDate || '',
+      'Sexo (H/M)': emp.gender === 'femenino' ? 'M' : 'H',
+      'CURP (18 dígitos)': emp.curp || '',
       'Ejecutivo': getLinkedName(emp.linkedExecutiveId) || 'N/A',
       'Supervisora': emp.category === 'Promotoras' 
         ? getLinkedName(emp.linkedSupervisorId) || 'N/A' 
         : (emp.category === 'Supervisoras' ? emp.supervisionName || 'N/A' : 'N/A'),
-      'Grupo': emp.groupName || 'N/A',
-      'Celular / WhatsApp': emp.email || '',
-      'Teléfono': emp.phone || '',
-      'Fecha Nacimiento': emp.birthDate || '',
-      'Fecha Ingreso': emp.hireDate || ''
+      'Supervisión / Grupo': emp.supervisionName || emp.groupName || '',
+      'Domicilio Particular': emp.address || '',
+      'Estado Civil': emp.civilStatus || 'Soltero(a)',
+      'Nacionalidad': emp.nationality || 'Mexicana',
+      'Salario Acordado ($)': emp.salary || '',
+      'Nombre del Aval': emp.guarantorName || '',
+      'Teléfono del Aval': emp.guarantorPhone || '',
+      'Domicilio del Aval': emp.guarantorAddress || ''
     }));
 
     const ws = XLSX.utils.json_to_sheet(dataToExport);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Personal");
-    XLSX.writeFile(wb, `Reporte_Personal_${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.writeFile(wb, `Reporte_Personal_Completo_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   const handleExportPDF = () => {
@@ -1354,63 +1842,55 @@ export const Personnel: React.FC<PersonnelProps> = ({
 
       {/* IMPORT MODAL */}
       {isImportModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl">
-            <div className="flex justify-between items-center mb-6 border-b pb-4">
-              <h3 className="text-xl font-bold text-gray-800 flex items-center">
-                 <FileSpreadsheet className="w-6 h-6 mr-2 text-green-600" /> 
-                 Importar Personal
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-xs">
+          <div className={`bg-white rounded-2xl w-full ${importStep === 'review' ? 'max-w-4xl' : 'max-w-lg'} p-6 shadow-2xl transition-all max-h-[92vh] flex flex-col overflow-hidden`}>
+            <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-3 shrink-0">
+              <h3 className="text-lg font-bold text-slate-900 flex items-center">
+                 <FileSpreadsheet className="w-5 h-5 mr-2 text-emerald-600" /> 
+                 Importar y Complementar Personal
               </h3>
-              <button onClick={closeImportModal} className="text-gray-400 hover:text-gray-600">
+              <button onClick={closeImportModal} className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100 transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
+            <div className="overflow-y-auto flex-1 custom-scrollbar pr-1">
             {importStep === 'upload' && (
-              <div className="space-y-6">
+              <div className="space-y-5">
                  {/* Mode Switcher */}
-                 <div className="flex border-b border-gray-200 mb-4">
+                 <div className="flex border-b border-gray-200 mb-2">
                    <button 
                      onClick={() => setImportMode('file')}
-                     className={`flex-1 py-2 text-sm font-medium border-b-2 transition-colors ${importMode === 'file' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                     className={`flex-1 py-2 text-xs sm:text-sm font-semibold border-b-2 transition-colors ${importMode === 'file' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
                    >
-                     <UploadCloud className="w-4 h-4 inline-block mr-2" /> Subir Archivo
+                     <UploadCloud className="w-4 h-4 inline-block mr-1.5" /> Subir Archivo Excel
                    </button>
                    <button 
                      onClick={() => setImportMode('paste')}
-                     className={`flex-1 py-2 text-sm font-medium border-b-2 transition-colors ${importMode === 'paste' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                     className={`flex-1 py-2 text-xs sm:text-sm font-semibold border-b-2 transition-colors ${importMode === 'paste' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
                    >
-                     <Clipboard className="w-4 h-4 inline-block mr-2" /> Pegar Tabla
+                     <Clipboard className="w-4 h-4 inline-block mr-1.5" /> Pegar Tabla
                    </button>
                  </div>
 
                  {importMode === 'file' ? (
                    <>
-                     <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl flex items-start">
-                        <AlertTriangle className="w-5 h-5 text-blue-600 mr-3 mt-0.5 flex-shrink-0" />
-                        <div className="text-sm text-blue-800">
-                           <p className="font-bold mb-1">Instrucciones:</p>
-                           <ul className="list-disc ml-4 space-y-1">
-                              <li>Descarga la plantilla para asegurar el formato correcto.</li>
-                              <li>Llena los datos sin cambiar el orden de las columnas.</li>
-                              <li>Guarda el archivo y súbelo aquí.</li>
-                           </ul>
-                        </div>
-                     </div>
-
                      <div className="flex justify-center">
                         <button 
                           onClick={handleDownloadTemplate}
-                          className="text-green-600 font-semibold flex items-center hover:underline"
+                          className="text-emerald-600 hover:text-emerald-700 text-xs font-bold flex items-center gap-1.5 p-2 rounded-lg bg-emerald-50 hover:bg-emerald-100 transition-colors border border-emerald-200 cursor-pointer shadow-2xs"
                         >
-                           <Download className="w-4 h-4 mr-2" /> Descargar Plantilla Excel
+                           <Download className="w-4 h-4" /> Descargar Plantilla Excel de Referencia (.xlsx)
                         </button>
                      </div>
 
-                     <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 flex flex-col items-center justify-center text-center hover:border-blue-400 hover:bg-gray-50 transition-all cursor-pointer relative">
-                        <UploadCloud className="w-12 h-12 text-gray-400 mb-3" />
-                        <p className="text-gray-600 font-medium">Click para seleccionar archivo</p>
-                        <p className="text-xs text-gray-400 mt-1">Formatos: .xlsx, .csv</p>
+                     <div className="border-2 border-dashed border-slate-300 rounded-xl p-8 flex flex-col items-center justify-center text-center hover:border-indigo-400 hover:bg-slate-50 transition-all cursor-pointer relative">
+                        <UploadCloud className="w-10 h-10 text-slate-400 mb-2" />
+                        <p className="text-slate-700 font-bold text-sm">Clic para seleccionar archivo Excel</p>
+                        <p className="text-xs text-slate-400 mt-0.5">Formatos: .xlsx, .xls, .csv</p>
+                        <p className="text-[11px] text-indigo-600 font-medium mt-2 bg-indigo-50 px-3 py-1 rounded-full">
+                          💡 El sistema analizará y buscará coincidencias con el personal actual para complementar su información automáticamente.
+                        </p>
                         <input 
                            type="file" 
                            accept=".xlsx, .xls, .csv" 
@@ -1421,12 +1901,12 @@ export const Personnel: React.FC<PersonnelProps> = ({
                    </>
                  ) : (
                    <div className="space-y-4">
-                     <div className="bg-amber-50 border border-amber-100 p-4 rounded-xl">
-                        <p className="text-sm text-amber-800 font-medium mb-2">
+                     <div className="bg-amber-50 border border-amber-100 p-3.5 rounded-xl">
+                        <p className="text-xs text-amber-900 font-bold mb-1.5">
                           1. Selecciona la Supervisora a la que pertenecen:
                         </p>
                         <select 
-                          className="w-full border border-amber-200 p-2 rounded bg-white text-gray-900 focus:ring-2 focus:ring-amber-500 outline-none text-sm"
+                          className="w-full border border-amber-200 p-2 rounded-lg bg-white text-slate-900 focus:ring-1 focus:ring-amber-500 outline-none text-xs font-medium cursor-pointer"
                           value={importSupervisorId}
                           onChange={e => setImportSupervisorId(e.target.value)}
                         >
@@ -1438,11 +1918,11 @@ export const Personnel: React.FC<PersonnelProps> = ({
                      </div>
 
                      <div>
-                       <p className="text-sm text-gray-700 font-medium mb-2">
+                       <p className="text-xs text-slate-700 font-medium mb-1.5">
                          2. Pega los datos (Columnas: Nombre Completo | Fecha Nacimiento | Grupo):
                        </p>
                        <textarea 
-                         className="w-full h-48 border border-gray-300 rounded-lg p-3 text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none"
+                         className="w-full h-40 border border-slate-200 rounded-lg p-2.5 text-xs font-mono focus:ring-1 focus:ring-indigo-500 outline-none"
                          placeholder={`Ejemplo:\nYESENIA ALCALA SEGOVIANO\t17/03/1986\tYESY LA CURVA\nESMERALDA GONZALEZ\t09/06/1990\tMERA COFRADIA`}
                          value={pasteContent}
                          onChange={e => setPasteContent(e.target.value)}
@@ -1452,9 +1932,9 @@ export const Personnel: React.FC<PersonnelProps> = ({
                      <button 
                        onClick={handlePasteAnalysis}
                        disabled={!importSupervisorId || !pasteContent.trim()}
-                       className="w-full bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                       className="w-full bg-slate-900 text-white py-2 rounded-lg font-bold text-xs hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
                      >
-                       Analizar y Previsualizar
+                       Analizar Coincidencias y Previsualizar
                      </button>
                    </div>
                  )}
@@ -1462,54 +1942,295 @@ export const Personnel: React.FC<PersonnelProps> = ({
             )}
 
             {importStep === 'review' && (
-               <div className="space-y-6 animate-fade-in">
-                  <div className="text-center">
-                     <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
-                     <h4 className="text-xl font-bold text-gray-800">Archivo Analizado</h4>
-                     <p className="text-gray-500 mt-2">
-                        Se encontraron <strong className="text-gray-800">{importedData.length}</strong> empleados en el archivo.
-                     </p>
-                     
-                     {duplicateCount > 0 && (
-                        <div className="mt-4 inline-flex items-center px-4 py-2 bg-amber-50 text-amber-700 rounded-full text-sm font-medium border border-amber-200">
-                           <AlertTriangle className="w-4 h-4 mr-2" />
-                           {duplicateCount} nombres ya existen en la base de datos.
+               <div className="space-y-4 animate-fade-in">
+                  {/* Encabezado y banner de seguridad */}
+                  <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/80 rounded-xl p-3.5 space-y-2">
+                     <div className="flex items-start gap-2.5">
+                        <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                        <div>
+                           <h4 className="text-sm font-bold text-emerald-950">
+                             Análisis de Coincidencias Completado
+                           </h4>
+                           <p className="text-xs text-emerald-800 leading-relaxed mt-0.5">
+                             Se leyeron <strong className="font-bold text-emerald-950">{importedData.length} registros</strong> en el archivo. 
+                             <strong className="font-semibold text-emerald-900"> Protección de Fallos activa:</strong> El personal existente mantendrá sus identificadores intactos. Sus fallos registrados e historial no se tocarán ni desvincularán; solo se complementarán los campos vacíos o actualizados encontrados.
+                           </p>
                         </div>
-                     )}
+                     </div>
                   </div>
 
-                  <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
-                     <h5 className="font-bold text-gray-700 mb-3 text-sm">¿Cómo deseas proceder?</h5>
-                     
-                     <div className="grid gap-3">
-                        <button 
-                           onClick={() => processImport('append')}
-                           className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg hover:border-blue-400 hover:shadow-md transition-all group text-left"
-                        >
-                           <div>
-                              <p className="font-bold text-gray-800 group-hover:text-blue-600">Agregar a los existentes</p>
-                              <p className="text-xs text-gray-500">
-                                 {duplicateCount > 0 
-                                   ? `Se omitirán los ${duplicateCount} duplicados y se agregarán los nuevos.` 
-                                   : 'Se conservan los empleados actuales y se suman los nuevos.'}
-                              </p>
-                           </div>
-                           <Plus className="w-5 h-5 text-gray-300 group-hover:text-blue-500" />
-                        </button>
+                  {/* Resumen de conteos rápidos */}
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setReviewTab('matches')}
+                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                        reviewTab === 'matches'
+                          ? 'bg-indigo-50/80 border-indigo-300 ring-1 ring-indigo-400'
+                          : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                          <Users className="w-4 h-4 text-indigo-600" />
+                          Coincidencias con Personal
+                        </span>
+                        <span className="bg-indigo-600 text-white font-bold px-2 py-0.5 rounded-full text-[11px]">
+                          {importMatches.length}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        {importMatches.filter(m => m.fieldsToComplement.length > 0).length} con campos a complementar
+                      </p>
+                    </button>
 
-                        <button 
-                           onClick={() => {
-                              if(confirm("¡CUIDADO! Esto borrará permanentemente todos los empleados actuales y los reemplazará con los del archivo. ¿Estás seguro?")) {
-                                 processImport('replace');
-                              }
-                           }}
-                           className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg hover:border-red-400 hover:shadow-md transition-all group text-left"
+                    <button
+                      type="button"
+                      onClick={() => setReviewTab('new')}
+                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                        reviewTab === 'new'
+                          ? 'bg-emerald-50/80 border-emerald-300 ring-1 ring-emerald-400'
+                          : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                          <Plus className="w-4 h-4 text-emerald-600" />
+                          Nuevos Colaboradores
+                        </span>
+                        <span className="bg-emerald-600 text-white font-bold px-2 py-0.5 rounded-full text-[11px]">
+                          {importNewEmployees.length}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        Sin coincidencia en la base de datos
+                      </p>
+                    </button>
+                  </div>
+
+                  {/* TAB 1: COINCIDENCIAS A COMPLEMENTAR */}
+                  {reviewTab === 'matches' && (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between text-xs px-1">
+                        <span className="font-semibold text-slate-700">
+                          Revisa la información que se complementará en cada colaborador:
+                        </span>
+                        {importMatches.length > 0 && (
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setImportMatches(prev => prev.map(m => ({ ...m, selected: true })))}
+                              className="text-[11px] text-indigo-600 hover:underline font-medium cursor-pointer"
+                            >
+                              Seleccionar todos
+                            </button>
+                            <span className="text-slate-300">|</span>
+                            <button
+                              type="button"
+                              onClick={() => setImportMatches(prev => prev.map(m => ({ ...m, selected: false })))}
+                              className="text-[11px] text-slate-500 hover:underline font-medium cursor-pointer"
+                            >
+                              Deseleccionar todos
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {importMatches.length === 0 ? (
+                        <div className="p-6 text-center bg-slate-50 rounded-xl border border-slate-200 text-slate-500 text-xs">
+                          No se encontraron coincidencias con personal existente. Todos los colaboradores del archivo se registrarán como nuevos.
+                        </div>
+                      ) : (
+                        <div className="space-y-2.5 max-h-[380px] overflow-y-auto custom-scrollbar pr-1">
+                          {importMatches.map((item, idx) => (
+                            <div 
+                              key={item.existing.id || idx}
+                              className={`p-3 rounded-xl border transition-all ${
+                                item.selected
+                                  ? 'bg-white border-slate-300 shadow-2xs'
+                                  : 'bg-slate-50/60 border-slate-200 opacity-60'
+                              }`}
+                            >
+                              <div className="flex items-start gap-2.5">
+                                <input
+                                  type="checkbox"
+                                  checked={item.selected}
+                                  onChange={() => {
+                                    setImportMatches(prev => prev.map((m, i) => i === idx ? { ...m, selected: !m.selected } : m));
+                                  }}
+                                  className="mt-1 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                />
+
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <h5 className="font-bold text-slate-900 text-xs sm:text-sm">
+                                      {item.existing.firstName} {item.existing.lastName}
+                                    </h5>
+                                    <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold uppercase border ${getCategoryColor(item.existing.category || 'Oficina')}`}>
+                                      {item.existing.category}
+                                    </span>
+                                    {item.existing.plaza && (
+                                      <span className="text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.2 rounded font-medium">
+                                        📍 {item.existing.plaza}
+                                      </span>
+                                    )}
+                                    <span className="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.2 rounded-full font-medium ml-auto">
+                                      🎯 {item.matchReason}
+                                    </span>
+                                  </div>
+
+                                  {/* Campos a complementar */}
+                                  <div className="mt-2">
+                                    {item.fieldsToComplement.length > 0 ? (
+                                      <div className="bg-slate-50 rounded-lg p-2 border border-slate-200/70 space-y-1.5">
+                                        <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 flex items-center gap-1">
+                                          <Sparkles className="w-3 h-3 text-emerald-600" />
+                                          Campos a complementar ({item.fieldsToComplement.length}):
+                                        </p>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                                          {item.fieldsToComplement.map((field, fIdx) => (
+                                            <div key={fIdx} className="text-[11px] bg-white p-1.5 rounded border border-slate-200 flex flex-col justify-between">
+                                              <span className="font-semibold text-slate-600 text-[10px]">{field.label}:</span>
+                                              <div className="flex items-center gap-1 mt-0.5">
+                                                <span className="text-slate-400 truncate max-w-[80px]" title={field.oldValue}>
+                                                  {field.oldValue}
+                                                </span>
+                                                <span className="text-slate-400">➔</span>
+                                                <span className="font-bold text-emerald-700 truncate" title={field.newValue}>
+                                                  {field.newValue}
+                                                </span>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <p className="text-[11px] text-slate-500 italic bg-slate-50 p-2 rounded border border-slate-200/50">
+                                        ✅ Información completa en el sistema. No se encontraron datos nuevos por complementar.
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* TAB 2: NUEVOS COLABORADORES */}
+                  {reviewTab === 'new' && (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between text-xs px-1">
+                        <label className="flex items-center gap-2 font-semibold text-slate-800 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={includeNewEmployees}
+                            onChange={e => setIncludeNewEmployees(e.target.checked)}
+                            className="rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                          />
+                          <span>Registrar estos {importNewEmployees.length} colaboradores como nuevo personal</span>
+                        </label>
+                      </div>
+
+                      {importNewEmployees.length === 0 ? (
+                        <div className="p-6 text-center bg-slate-50 rounded-xl border border-slate-200 text-slate-500 text-xs">
+                          No hay nuevos colaboradores en este archivo. Todos coincidieron con personal ya registrado.
+                        </div>
+                      ) : (
+                        <div className="max-h-[380px] overflow-y-auto custom-scrollbar border border-slate-200 rounded-xl bg-white">
+                          <table className="w-full text-left text-[11px] border-collapse">
+                            <thead className="bg-slate-100/80 sticky top-0 text-[10px] font-bold text-slate-600 uppercase tracking-wider border-b border-slate-200">
+                              <tr>
+                                <th className="py-2 px-2.5">Colaborador</th>
+                                <th className="py-2 px-2.5">Puesto / Plaza</th>
+                                <th className="py-2 px-2.5">Categoría</th>
+                                <th className="py-2 px-2.5">Contacto</th>
+                                <th className="py-2 px-2.5">CURP</th>
+                                <th className="py-2 px-2.5">Datos del Aval</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 text-[11px]">
+                              {importNewEmployees.map((emp, idx) => (
+                                <tr key={idx} className="hover:bg-slate-50/80">
+                                  <td className="py-2 px-2.5 font-semibold text-slate-900 truncate max-w-[140px]">
+                                    {emp.firstName} {emp.lastName}
+                                  </td>
+                                  <td className="py-2 px-2.5 text-slate-600 truncate max-w-[120px]">
+                                    <span>{emp.position || '-'}</span>
+                                    <span className="block text-[10px] text-slate-400">{emp.plaza || 'Sin plaza'}</span>
+                                  </td>
+                                  <td className="py-2 px-2.5">
+                                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase border ${getCategoryColor(emp.category || 'Oficina')}`}>
+                                      {emp.category}
+                                    </span>
+                                  </td>
+                                  <td className="py-2 px-2.5 font-mono text-slate-700">
+                                    {emp.email ? `${emp.email}` : '-'}
+                                    {emp.accessCode && <span className="block text-[9px] text-slate-400 font-mono">PIN: {emp.accessCode}</span>}
+                                  </td>
+                                  <td className="py-2 px-2.5 font-mono text-slate-600 text-[10px] truncate max-w-[130px]">
+                                    {emp.curp || <span className="text-slate-300 italic">No asignado</span>}
+                                  </td>
+                                  <td className="py-2 px-2.5 text-slate-600 text-[10px]">
+                                    {emp.guarantorName ? (
+                                      <div>
+                                        <span className="font-semibold text-slate-800 block truncate max-w-[120px]">{emp.guarantorName}</span>
+                                        {emp.guarantorPhone && <span className="font-mono text-emerald-600">{emp.guarantorPhone}</span>}
+                                      </div>
+                                    ) : (
+                                      <span className="text-slate-400 italic">Sin aval</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Botones de acción */}
+                  <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
+                     <div className="text-xs text-slate-600">
+                       <p className="font-bold text-slate-900">
+                         {importMatches.filter(m => m.selected && m.fieldsToComplement.length > 0).length} colaboradores a complementar
+                         {includeNewEmployees && importNewEmployees.length > 0 ? ` + ${importNewEmployees.length} nuevos a registrar` : ''}
+                       </p>
+                       <p className="text-[11px] text-slate-500">
+                         Los registros de fallos vinculados permanecen 100% seguros y protegidos.
+                       </p>
+                     </div>
+
+                     <div className="flex items-center gap-2 w-full sm:w-auto">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setImportStep('upload');
+                            setImportedData([]);
+                            setImportMatches([]);
+                            setImportNewEmployees([]);
+                          }}
+                          className="px-3 py-2 text-xs text-slate-600 hover:text-slate-900 font-semibold cursor-pointer underline"
                         >
-                           <div>
-                              <p className="font-bold text-gray-800 group-hover:text-red-600">Sustituir TODO</p>
-                              <p className="text-xs text-gray-500">Borra la base de datos actual y carga solo el archivo.</p>
-                           </div>
-                           <RefreshCcw className="w-5 h-5 text-gray-300 group-hover:text-red-500" />
+                          ← Cargar otro archivo
+                        </button>
+                        <button
+                          type="button"
+                          onClick={closeImportModal}
+                          className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                        >
+                          Cancelar
+                        </button>
+                        <button 
+                          onClick={processImport}
+                          disabled={importMatches.filter(m => m.selected && m.fieldsToComplement.length > 0).length === 0 && (!includeNewEmployees || importNewEmployees.length === 0)}
+                          className="flex-1 sm:flex-none px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg shadow-sm flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <ShieldCheck className="w-4 h-4" />
+                          Confirmar y Aplicar Cambios
                         </button>
                      </div>
                   </div>
@@ -1518,27 +2239,47 @@ export const Personnel: React.FC<PersonnelProps> = ({
 
             {importStep === 'processing' && (
                <div className="py-12 text-center">
-                  <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-4"></div>
-                  <h4 className="text-lg font-bold text-gray-800">Procesando datos...</h4>
-                  <p className="text-sm text-gray-500">Por favor no cierres esta ventana.</p>
+                  <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mx-auto mb-4"></div>
+                  <h4 className="text-lg font-bold text-gray-800">Complementando información de personal...</h4>
+                  <p className="text-sm text-gray-500 mt-1">Preservando identificadores y fallos vinculados.</p>
                </div>
             )}
 
             {importStep === 'success' && (
-               <div className="py-8 text-center animate-fade-in">
-                  <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                     <CheckCircle className="w-8 h-8 text-green-600" />
+               <div className="py-8 text-center animate-fade-in space-y-4">
+                  <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto">
+                     <CheckCircle className="w-8 h-8 text-emerald-600" />
                   </div>
-                  <h4 className="text-xl font-bold text-gray-800 mb-2">¡Importación Exitosa!</h4>
-                  <p className="text-gray-500 mb-6">Los datos han sido actualizados correctamente.</p>
+                  <div>
+                    <h4 className="text-xl font-bold text-slate-900">¡Información Complementada con Éxito!</h4>
+                    <div className="mt-2 text-xs text-slate-600 space-y-1">
+                      <p>
+                        <strong className="text-slate-900 font-bold">{importStats.updated}</strong> colaboradores existentes fueron complementados/actualizados.
+                      </p>
+                      {importStats.added > 0 && (
+                        <p>
+                          <strong className="text-slate-900 font-bold">{importStats.added}</strong> nuevos colaboradores fueron registrados en el sistema.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 max-w-md mx-auto text-xs text-emerald-800">
+                    <p className="font-semibold">🛡️ Protección de Fallos confirmada</p>
+                    <p className="text-[11px] text-emerald-700 mt-0.5">
+                      Los identificadores de las promotoras se mantuvieron intactos. Ningún fallo fue borrado o desvinculado.
+                    </p>
+                  </div>
+
                   <button 
                      onClick={closeImportModal}
-                     className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                     className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-lg transition-colors font-bold text-xs cursor-pointer shadow-sm"
                   >
-                     Entendido
+                     Aceptar y Continuar
                   </button>
                </div>
-            )}
+             )}
+            </div>
 
           </div>
         </div>
@@ -2164,6 +2905,62 @@ export const Personnel: React.FC<PersonnelProps> = ({
                 </div>
               </div>
 
+              {/* SECCIÓN 4: DATOS DEL AVAL DEL PERSONAL */}
+              <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-2xs space-y-3">
+                <div className="flex items-center gap-1.5 pb-2 border-b border-slate-100 text-slate-800">
+                  <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+                  <span className="text-[11px] font-bold uppercase tracking-wider">4. Datos del Aval del Personal</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 text-xs">
+                  {/* Nombre del Aval */}
+                  <div className="sm:col-span-8">
+                    <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                      Nombre del Aval
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Nombre completo del aval"
+                      value={formData.guarantorName || ''}
+                      onChange={e => setFormData(prev => ({ ...prev, guarantorName: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg bg-slate-50/50 focus:bg-white text-slate-900 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-slate-900 shadow-2xs"
+                    />
+                  </div>
+
+                  {/* Teléfono del Aval */}
+                  <div className="sm:col-span-4">
+                    <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                      Teléfono del Aval
+                    </label>
+                    <input
+                      type="tel"
+                      maxLength={10}
+                      placeholder="10 dígitos (Celular / WhatsApp)"
+                      value={formData.guarantorPhone || ''}
+                      onChange={e => {
+                        const val = e.target.value.replace(/\D/g, '').slice(0, 10);
+                        setFormData(prev => ({ ...prev, guarantorPhone: val }));
+                      }}
+                      className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg bg-slate-50/50 focus:bg-white text-slate-900 text-xs font-mono font-medium focus:outline-none focus:ring-1 focus:ring-slate-900 shadow-2xs"
+                    />
+                  </div>
+
+                  {/* Domicilio del Aval */}
+                  <div className="sm:col-span-12">
+                    <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                      Domicilio del Aval
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Calle, Número, Colonia, C.P., Municipio, Estado"
+                      value={formData.guarantorAddress || ''}
+                      onChange={e => setFormData(prev => ({ ...prev, guarantorAddress: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg bg-slate-50/50 focus:bg-white text-slate-900 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-slate-900 shadow-2xs"
+                    />
+                  </div>
+                </div>
+              </div>
+
               {/* Action Buttons Footer */}
               <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-200 shrink-0">
                 <div className="text-[11px] text-slate-400">
@@ -2545,6 +3342,52 @@ export const Personnel: React.FC<PersonnelProps> = ({
                       ) : (
                         <span className="text-slate-400 text-xs italic mt-0.5 block">Sin contrato generado aún</span>
                       )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Datos del Aval */}
+                <div className="space-y-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" /> Datos del Aval
+                  </span>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 text-xs">
+                    <div className="bg-white p-2.5 rounded-lg border border-slate-200 sm:col-span-8">
+                      <span className="text-[10px] text-slate-400 block font-semibold">Nombre del Aval</span>
+                      <span className="font-semibold text-slate-900 mt-0.5 block">
+                        {viewingEmployeeDetails.guarantorName || <span className="text-slate-400 italic">No registrado</span>}
+                      </span>
+                    </div>
+
+                    <div className="bg-white p-2.5 rounded-lg border border-slate-200 sm:col-span-4">
+                      <span className="text-[10px] text-slate-400 block font-semibold">Teléfono del Aval</span>
+                      {viewingEmployeeDetails.guarantorPhone ? (
+                        <div className="flex items-center justify-between gap-1 mt-0.5">
+                          <span className="font-mono font-bold text-slate-900">
+                            {viewingEmployeeDetails.guarantorPhone}
+                          </span>
+                          <a 
+                            href={`https://wa.me/52${viewingEmployeeDetails.guarantorPhone.replace(/\D/g, '')}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-emerald-600 hover:text-emerald-700 p-1 hover:bg-emerald-50 rounded transition-colors"
+                            title="Enviar WhatsApp al aval"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                          </a>
+                        </div>
+                      ) : (
+                        <span className="text-slate-400 italic mt-0.5 block">No registrado</span>
+                      )}
+                    </div>
+
+                    <div className="bg-white p-2.5 rounded-lg border border-slate-200 sm:col-span-12">
+                      <span className="text-[10px] text-slate-400 block font-semibold">Domicilio del Aval</span>
+                      <span className="font-semibold text-slate-900 flex items-center gap-1.5 mt-0.5">
+                        <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        {viewingEmployeeDetails.guarantorAddress || <span className="text-slate-400 italic">No registrado</span>}
+                      </span>
                     </div>
                   </div>
                 </div>

@@ -53,6 +53,11 @@ export interface Employee {
   contractEndDate?: string; // Fecha de término / vencimiento del contrato YYYY-MM-DD
   lastContractId?: string; // ID del último contrato en historial
   lastContractGeneratedAt?: string; // ISO timestamp de cuando se generó el contrato más reciente
+
+  // Aval / Guarantor Fields
+  guarantorName?: string; // Nombre del aval del personal
+  guarantorAddress?: string; // Domicilio del aval del personal
+  guarantorPhone?: string; // Teléfono del aval del personal
 }
 
 export interface EmployeeContract {
