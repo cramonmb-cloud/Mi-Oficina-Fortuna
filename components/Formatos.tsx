@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import html2canvas from 'html2canvas';
 import { 
   FileStack, 
   FileText, 
@@ -40,8 +41,24 @@ import {
   ChevronDown,
   AlignJustify,
   AlignLeft,
+  AlignCenter,
+  AlignRight,
   Upload,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Italic,
+  Underline,
+  Strikethrough,
+  List,
+  ListOrdered,
+  Indent,
+  Outdent,
+  Undo,
+  Redo,
+  RemoveFormatting,
+  Type,
+  Highlighter,
+  Palette,
+  Minus
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import { Employee, Plaza, DocumentFormatConfig, GeneratedDocumentRecord } from '../types';
@@ -550,10 +567,26 @@ export const Formatos: React.FC<FormatosProps> = ({
   const [historySearchQuery, setHistorySearchQuery] = useState('');
 
   // Empleado seleccionado para autollenar datos
+  // Empleado seleccionado para autollenar datos
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('');
 
-  // TEXTO EDITABLE EN VIVO DE LA HOJA MEMBRETADA
+  // TEXTO Y FORMATO EN VIVO DE LA HOJA MEMBRETADA (EDITOR RICO WYSIWYG)
   const [liveDocumentText, setLiveDocumentText] = useState<string>('');
+  const [liveDocumentHtml, setLiveDocumentHtml] = useState<string>('');
+
+  // Estados de barra de herramientas de formato
+  const [selectedFontSize, setSelectedFontSize] = useState<string>('13px');
+  const [selectedFontFamily, setSelectedFontFamily] = useState<string>('sans-serif');
+  const [selectedTextColor, setSelectedTextColor] = useState<string>('#0f172a');
+  const [selectedHighlightColor, setSelectedHighlightColor] = useState<string>('transparent');
+  const [isColorPickerOpen, setIsColorPickerOpen] = useState(false);
+  const [isHighlightPickerOpen, setIsHighlightPickerOpen] = useState(false);
+
+  // Refs para el editor de contenido y la hoja imprimible
+  const editorRef = useRef<HTMLDivElement>(null);
+  const sheetPrintRef = useRef<HTMLDivElement>(null);
+  const colorPickerRef = useRef<HTMLDivElement>(null);
+  const highlightPickerRef = useRef<HTMLDivElement>(null);
 
   // LOGOTIPO EXCLUSIVO PARA FORMATOS Y DOCUMENTOS
   const [formatLogoUrl, setFormatLogoUrl] = useState<string>(() => {
@@ -631,9 +664,150 @@ export const Formatos: React.FC<FormatosProps> = ({
     template: ''
   });
 
-  // Ref para textarea del machote y del documento en vivo
+  // Ref para textarea del machote
   const machoteTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const liveDocumentRef = useRef<HTMLTextAreaElement>(null);
+
+  // Cerrar pickers al hacer clic fuera
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (colorPickerRef.current && !colorPickerRef.current.contains(e.target as Node)) {
+        setIsColorPickerOpen(false);
+      }
+      if (highlightPickerRef.current && !highlightPickerRef.current.contains(e.target as Node)) {
+        setIsHighlightPickerOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
+  // Conversor inteligente de texto/machote a HTML enriquecido
+  const textToHtml = (text: string): string => {
+    if (!text) return '<p><br></p>';
+    if (/<(p|div|span|strong|em|u|s|h[1-6]|ul|ol|table|br|hr)[\s>]/.test(text)) {
+      return text;
+    }
+
+    let html = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/__(.*?)__/g, '<u>$1</u>')
+      .replace(/~~(.*?)~~/g, '<s>$1</s>')
+      .replace(/\*(.*?)\*/g, '<em>$1</em>');
+
+    const firmaHtml = `
+      <div style="margin-top: 35px; margin-bottom: 20px; page-break-inside: avoid;" class="signatures-table-block">
+        <table style="width: 100%; border-collapse: collapse; text-align: center;">
+          <tr>
+            <td style="width: 45%; vertical-align: bottom; padding: 0 15px;">
+              <div style="border-top: 1.5px solid #334155; padding-top: 6px; font-weight: bold; font-size: 11px; color: #0f172a;">FIRMA DE CONFORMIDAD</div>
+              <div style="font-size: 10px; color: #64748b; margin-top: 2px;">EL TRABAJADOR / INTERESADO</div>
+            </td>
+            <td style="width: 10%;"></td>
+            <td style="width: 45%; vertical-align: bottom; padding: 0 15px;">
+              <div style="border-top: 1.5px solid #334155; padding-top: 6px; font-weight: bold; font-size: 11px; color: #0f172a;">POR LA EMPRESA</div>
+              <div style="font-size: 10px; color: #64748b; margin-top: 2px;">${(companyName || 'REPRESENTANTE AUTORIZADO').toUpperCase()}</div>
+            </td>
+          </tr>
+        </table>
+      </div>
+    `;
+    html = html.replace(/\[FIRMAS_TABLA\]/g, firmaHtml);
+
+    const paragraphs = html.split(/\n\n+/);
+    return paragraphs
+      .map(p => `<p style="margin-bottom: 12px; line-height: 1.6;">${p.replace(/\n/g, '<br/>')}</p>`)
+      .join('');
+  };
+
+  // Ejecutor de comandos para el editor enriquecido
+  const handleEditorInput = () => {
+    if (editorRef.current) {
+      const html = editorRef.current.innerHTML;
+      setLiveDocumentHtml(html);
+      setLiveDocumentText(editorRef.current.innerText || '');
+    }
+  };
+
+  const executeCmd = (command: string, value: string | undefined = undefined) => {
+    editorRef.current?.focus();
+    document.execCommand(command, false, value);
+    handleEditorInput();
+  };
+
+  const applyFontSize = (sizePx: string) => {
+    editorRef.current?.focus();
+    setSelectedFontSize(sizePx);
+    
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+    
+    if (range.collapsed) return;
+
+    const span = document.createElement('span');
+    span.style.fontSize = sizePx;
+    span.appendChild(range.extractContents());
+    range.insertNode(span);
+
+    selection.removeAllRanges();
+    const newRange = document.createRange();
+    newRange.selectNodeContents(span);
+    selection.addRange(newRange);
+
+    handleEditorInput();
+  };
+
+  const applyFontFamily = (font: string) => {
+    editorRef.current?.focus();
+    setSelectedFontFamily(font);
+    executeCmd('fontName', font);
+  };
+
+  const applyTextColor = (color: string) => {
+    setSelectedTextColor(color);
+    executeCmd('foreColor', color);
+    setIsColorPickerOpen(false);
+  };
+
+  const applyHighlightColor = (color: string) => {
+    setSelectedHighlightColor(color);
+    executeCmd('hiliteColor', color);
+    setIsHighlightPickerOpen(false);
+  };
+
+  const insertHorizontalRule = () => {
+    executeCmd('insertHorizontalRule');
+  };
+
+  const insertSignaturesBlock = () => {
+    editorRef.current?.focus();
+    const emp = employees.find(e => e.id === selectedEmployeeId);
+    const empName = emp ? `${emp.firstName} ${emp.lastName}` : 'EL TRABAJADOR / INTERESADO';
+    const compName = companyName || 'REPRESENTANTE AUTORIZADO';
+    
+    const firmaHtml = `
+      <div style="margin-top: 35px; margin-bottom: 20px; page-break-inside: avoid;" class="signatures-table-block">
+        <table style="width: 100%; border-collapse: collapse; text-align: center;">
+          <tr>
+            <td style="width: 45%; vertical-align: bottom; padding: 0 15px;">
+              <div style="border-top: 1.5px solid #334155; padding-top: 6px; font-weight: bold; font-size: 11px; color: #0f172a;">FIRMA DE CONFORMIDAD</div>
+              <div style="font-size: 10px; color: #64748b; margin-top: 2px;">${empName.toUpperCase()}</div>
+            </td>
+            <td style="width: 10%;"></td>
+            <td style="width: 45%; vertical-align: bottom; padding: 0 15px;">
+              <div style="border-top: 1.5px solid #334155; padding-top: 6px; font-weight: bold; font-size: 11px; color: #0f172a;">POR LA EMPRESA</div>
+              <div style="font-size: 10px; color: #64748b; margin-top: 2px;">${compName.toUpperCase()}</div>
+            </td>
+          </tr>
+        </table>
+      </div>
+    `;
+    document.execCommand('insertHTML', false, firmaHtml);
+    handleEditorInput();
+  };
 
   // Filtro y búsqueda para la selección de empleados (Autollenar Compacto)
   const [isEmployeePopoverOpen, setIsEmployeePopoverOpen] = useState(false);
@@ -801,9 +975,9 @@ export const Formatos: React.FC<FormatosProps> = ({
       DOMICILIO_CLIENTE: empAddress,
       TELEFONO_PERSONA: empPhone,
       TELEFONO_CLIENTE: empPhone,
-      AVAL_NOMBRE: 'NOMBRE DEL AVAL',
-      AVAL_DOMICILIO: 'Domicilio del aval',
-      AVAL_TELEFONO: 'Teléfono del aval',
+      AVAL_NOMBRE: emp?.guarantorName || 'NOMBRE DEL AVAL',
+      AVAL_DOMICILIO: emp?.guarantorAddress || 'Domicilio del aval',
+      AVAL_TELEFONO: emp?.guarantorPhone || 'Teléfono del aval',
       FECHA_INICIO: empHireDate,
       FECHA_INGRESO: empHireDate,
       FECHA_FIN: todayStr,
@@ -826,10 +1000,20 @@ export const Formatos: React.FC<FormatosProps> = ({
     return text;
   };
 
+  const selectedEmployeeObj = useMemo(() => {
+    return employees.find(e => e.id === selectedEmployeeId) || null;
+  }, [employees, selectedEmployeeId]);
+
   // Inicializar o sincronizar el texto en vivo de la hoja membretada al cambiar de formato o machote
   useEffect(() => {
-    const emp = employees.find(e => e.id === selectedEmployeeId) || null;
-    setLiveDocumentText(compileTemplateWithEmployee(activeFormat.template, emp));
+    const emp = selectedEmployeeObj;
+    const compiled = compileTemplateWithEmployee(activeFormat.template, emp);
+    const html = textToHtml(compiled);
+    setLiveDocumentText(compiled);
+    setLiveDocumentHtml(html);
+    if (editorRef.current) {
+      editorRef.current.innerHTML = html;
+    }
   }, [activeFormat.id, activeFormat.template]);
 
   // Al seleccionar un empleado del dropdown: inyectar automáticamente en el texto
@@ -837,13 +1021,24 @@ export const Formatos: React.FC<FormatosProps> = ({
     setSelectedEmployeeId(empId);
     const emp = employees.find(e => e.id === empId) || null;
     const compiled = compileTemplateWithEmployee(activeFormat.template, emp);
+    const html = textToHtml(compiled);
     setLiveDocumentText(compiled);
+    setLiveDocumentHtml(html);
+    if (editorRef.current) {
+      editorRef.current.innerHTML = html;
+    }
   };
 
   // Restablecer texto de la hoja membretada al machote original con datos del empleado
   const handleResetLiveText = () => {
-    const emp = employees.find(e => e.id === selectedEmployeeId) || null;
-    setLiveDocumentText(compileTemplateWithEmployee(activeFormat.template, emp));
+    const emp = selectedEmployeeObj;
+    const compiled = compileTemplateWithEmployee(activeFormat.template, emp);
+    const html = textToHtml(compiled);
+    setLiveDocumentText(compiled);
+    setLiveDocumentHtml(html);
+    if (editorRef.current) {
+      editorRef.current.innerHTML = html;
+    }
   };
 
   // Guardar documento generado en el Historial
@@ -1153,21 +1348,71 @@ export const Formatos: React.FC<FormatosProps> = ({
     doc.save(`${cleanPrefix}_${todayStr}.pdf`);
   };
 
-  // Descargar PDF con el texto editado directamente de la hoja membretada
+  // Descargar PDF con el formato y texto editado directamente de la hoja membretada
   const handleDownloadPdf = async () => {
     setIsGeneratingPdf(true);
     try {
-      generateOfficialPdf(
-        activeFormat.title, 
-        liveDocumentText, 
-        new Date().toLocaleString('es-MX'), 
-        activeFormat.title
-      );
-      // Guardar automáticamente en el Historial
-      await handleSaveToHistory(liveDocumentText);
+      if (sheetPrintRef.current) {
+        const element = sheetPrintRef.current;
+        
+        // Renderizado de ultra-alta definición (scale: 2) para texto nítido y logotipos impecables
+        const canvas = await html2canvas(element, {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#ffffff',
+          windowWidth: element.scrollWidth
+        });
+
+        const imgData = canvas.toDataURL('image/jpeg', 0.98);
+        const pdf = new jsPDF('p', 'mm', 'letter');
+        const pdfWidth = pdf.internal.pageSize.getWidth(); // 215.9 mm
+        const pdfHeight = pdf.internal.pageSize.getHeight(); // 279.4 mm
+
+        const imgWidth = pdfWidth;
+        const imgHeight = (canvas.height * pdfWidth) / canvas.width;
+
+        let heightLeft = imgHeight;
+        let position = 0;
+
+        // Página 1
+        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+        heightLeft -= pdfHeight;
+
+        // Páginas adicionales si el documento es más extenso que 1 hoja
+        while (heightLeft > 2) {
+          position -= pdfHeight;
+          pdf.addPage();
+          pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+          heightLeft -= pdfHeight;
+        }
+
+        const cleanPrefix = (activeFormat.title || 'Documento').replace(/[^a-zA-Z0-9_-]/g, '_');
+        pdf.save(`${cleanPrefix}_${todayStr}.pdf`);
+
+        // Guardar automáticamente en el Historial con el formato enriquecido
+        await handleSaveToHistory(editorRef.current?.innerHTML || liveDocumentHtml);
+      } else {
+        generateOfficialPdf(
+          activeFormat.title, 
+          editorRef.current?.innerText || liveDocumentText, 
+          new Date().toLocaleString('es-MX'), 
+          activeFormat.title
+        );
+      }
     } catch (e) {
-      console.error("Error generando PDF:", e);
-      alert("Ocurrió un error al generar el documento PDF.");
+      console.error("Error generando PDF con motor visual, recurriendo al generador estructurado:", e);
+      try {
+        generateOfficialPdf(
+          activeFormat.title, 
+          editorRef.current?.innerText || liveDocumentText, 
+          new Date().toLocaleString('es-MX'), 
+          activeFormat.title
+        );
+      } catch (err2) {
+        console.error("Error en fallback PDF:", err2);
+        alert("Ocurrió un error al generar el documento PDF.");
+      }
     } finally {
       setIsGeneratingPdf(false);
     }
@@ -1176,9 +1421,10 @@ export const Formatos: React.FC<FormatosProps> = ({
   // Descargar PDF directamente desde un registro del Historial
   const handleDownloadPdfFromHistory = (item: GeneratedDocumentRecord) => {
     try {
+      const cleanContent = item.content.replace(/<[^>]*>/g, ' ');
       generateOfficialPdf(
         item.formatTitle,
-        item.content,
+        cleanContent,
         new Date(item.generatedAt).toLocaleString('es-MX'),
         item.formatTitle
       );
@@ -1194,7 +1440,12 @@ export const Formatos: React.FC<FormatosProps> = ({
     if (item.employeeId) {
       setSelectedEmployeeId(item.employeeId);
     }
+    const html = textToHtml(item.content);
+    setLiveDocumentHtml(html);
     setLiveDocumentText(item.content);
+    if (editorRef.current) {
+      editorRef.current.innerHTML = html;
+    }
     setActiveSubTab('generator');
   };
 
@@ -1211,9 +1462,10 @@ export const Formatos: React.FC<FormatosProps> = ({
     }
   };
 
-  // Copiar texto compilado al portapapeles
+  // Copiar texto limpio o compilado al portapapeles
   const handleCopyText = (text?: string) => {
-    navigator.clipboard.writeText(text || liveDocumentText);
+    const textToCopy = text || editorRef.current?.innerText || liveDocumentText;
+    navigator.clipboard.writeText(textToCopy);
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
   };
@@ -1421,8 +1673,6 @@ export const Formatos: React.FC<FormatosProps> = ({
       (h.content && h.content.toLowerCase().includes(q))
     );
   }, [generatedHistory, historySearchQuery]);
-
-  const selectedEmployeeObj = employees.find(e => e.id === selectedEmployeeId);
 
   return (
     <div className="space-y-6 pb-12 animate-fade-in">
@@ -1838,89 +2088,432 @@ export const Formatos: React.FC<FormatosProps> = ({
           {/* HOJA DIGITAL TAMAÑO CARTA CON EDICIÓN DIRECTA EN VIVO */}
           <div className="bg-white rounded-2xl border border-slate-300/90 shadow-xl overflow-hidden flex flex-col">
             
-            {/* Barra superior de la hoja */}
-            <div className="bg-slate-50 px-6 py-2.5 border-b border-slate-200 flex items-center justify-between text-xs">
+            {/* Barra superior informativa */}
+            <div className="bg-slate-50 px-5 py-2.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs">
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
                 <span className="font-bold text-slate-800 uppercase tracking-wider text-[11px]">
-                  Vista Previa Membretada (Edición Directa Habilitada)
+                  Editor de Formato y Vista Previa Membretada
                 </span>
               </div>
               <div className="flex items-center gap-2 text-[11px] text-slate-500 font-medium">
-                <span>Haz clic en cualquier renglón para editarlo libremente</span>
+                <span>Edita el texto directamente y aplica negritas, tamaños, colores y alineación</span>
               </div>
             </div>
 
-            {/* Contenedor de la Hoja Membretada */}
-            <div className="p-8 sm:p-12 bg-white text-slate-800 space-y-6 select-text">
+            {/* BARRA DE HERRAMIENTAS DE EDICIÓN RICA (RICH TEXT TOOLBAR COMPLETA) */}
+            <div className="bg-slate-100/95 border-b border-slate-200 px-4 py-2 flex flex-wrap items-center gap-1.5 text-slate-700 select-none">
               
-              {/* Membrete Oficial Institucional */}
-              <div className="flex items-center justify-between gap-4 border-b-2 border-slate-800 pb-4">
-                <div className="flex items-center gap-3.5">
-                  {effectiveFormatLogo ? (
-                    <img 
-                      src={effectiveFormatLogo} 
-                      alt="Logo" 
-                      className="h-14 max-w-[170px] object-contain shrink-0" 
-                    />
-                  ) : (
-                    <div className="p-2.5 bg-slate-100 rounded-xl border border-slate-200 text-slate-700">
-                      <Building2 className="w-6 h-6" />
+              {/* Deshacer / Rehacer */}
+              <div className="flex items-center gap-0.5 pr-2 border-r border-slate-300">
+                <button
+                  type="button"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => executeCmd('undo')}
+                  className="p-1.5 hover:bg-white hover:text-slate-900 rounded-lg transition-colors cursor-pointer"
+                  title="Deshacer (Ctrl+Z)"
+                >
+                  <Undo className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => executeCmd('redo')}
+                  className="p-1.5 hover:bg-white hover:text-slate-900 rounded-lg transition-colors cursor-pointer"
+                  title="Rehacer (Ctrl+Y)"
+                >
+                  <Redo className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* Tipografía */}
+              <div className="flex items-center gap-1 pr-2 border-r border-slate-300">
+                <select
+                  value={selectedFontFamily}
+                  onChange={e => applyFontFamily(e.target.value)}
+                  className="text-xs bg-white border border-slate-200 rounded-lg px-2 py-1 outline-none font-medium cursor-pointer text-slate-800"
+                  title="Familia tipográfica"
+                >
+                  <option value="sans-serif">Sans-serif (Arial / Inter)</option>
+                  <option value="serif">Serif (Times / Georgia)</option>
+                  <option value="monospace">Monospace (Courier / Código)</option>
+                </select>
+              </div>
+
+              {/* Tamaño de Letra */}
+              <div className="flex items-center gap-1 pr-2 border-r border-slate-300">
+                <Type className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <select
+                  value={selectedFontSize}
+                  onChange={e => applyFontSize(e.target.value)}
+                  className="text-xs bg-white border border-slate-200 rounded-lg px-2 py-1 outline-none font-medium cursor-pointer text-slate-800"
+                  title="Tamaño de letra"
+                >
+                  <option value="10px">10px - Muy pequeño</option>
+                  <option value="11px">11px - Pequeño</option>
+                  <option value="12px">12px - Estándar</option>
+                  <option value="13px">13px - Normal</option>
+                  <option value="15px">15px - Destacado</option>
+                  <option value="18px">18px - Subtítulo</option>
+                  <option value="22px">22px - Título</option>
+                  <option value="26px">26px - Gran Título</option>
+                </select>
+              </div>
+
+              {/* Formato B / I / U / S */}
+              <div className="flex items-center gap-0.5 pr-2 border-r border-slate-300">
+                <button
+                  type="button"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => executeCmd('bold')}
+                  className="p-1.5 hover:bg-white hover:text-slate-900 rounded-lg font-bold text-xs transition-colors cursor-pointer"
+                  title="Negritas (Ctrl+B)"
+                >
+                  <Bold className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => executeCmd('italic')}
+                  className="p-1.5 hover:bg-white hover:text-slate-900 rounded-lg italic text-xs transition-colors cursor-pointer"
+                  title="Cursiva (Ctrl+I)"
+                >
+                  <Italic className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => executeCmd('underline')}
+                  className="p-1.5 hover:bg-white hover:text-slate-900 rounded-lg underline text-xs transition-colors cursor-pointer"
+                  title="Subrayado (Ctrl+U)"
+                >
+                  <Underline className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => executeCmd('strikeThrough')}
+                  className="p-1.5 hover:bg-white hover:text-slate-900 rounded-lg line-through text-xs transition-colors cursor-pointer"
+                  title="Tachado"
+                >
+                  <Strikethrough className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* Color de Texto y Resaltador */}
+              <div className="flex items-center gap-1.5 pr-2 border-r border-slate-300 relative">
+                {/* Color de Texto */}
+                <div className="relative" ref={colorPickerRef}>
+                  <button
+                    type="button"
+                    onMouseDown={e => e.preventDefault()}
+                    onClick={() => {
+                      setIsColorPickerOpen(prev => !prev);
+                      setIsHighlightPickerOpen(false);
+                    }}
+                    className="p-1.5 hover:bg-white rounded-lg flex items-center gap-1 text-xs font-bold transition-colors cursor-pointer"
+                    title="Color del texto"
+                  >
+                    <Palette className="w-3.5 h-3.5 text-slate-700" />
+                    <span className="w-2.5 h-2.5 rounded-full border border-slate-300" style={{ backgroundColor: selectedTextColor }}></span>
+                  </button>
+
+                  {isColorPickerOpen && (
+                    <div className="absolute top-full mt-1 left-0 z-50 bg-white border border-slate-200 rounded-xl shadow-xl p-2.5 flex flex-col gap-2 min-w-[150px] animate-fade-in">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Color del Texto</span>
+                      <div className="grid grid-cols-5 gap-1.5">
+                        {[
+                          { label: 'Negro', color: '#0f172a' },
+                          { label: 'Pizarra', color: '#334155' },
+                          { label: 'Azul Marino', color: '#1e3a8a' },
+                          { label: 'Azul Real', color: '#2563eb' },
+                          { label: 'Rojo Vino', color: '#991b1b' },
+                          { label: 'Rojo Carmesí', color: '#dc2626' },
+                          { label: 'Verde Bosque', color: '#065f46' },
+                          { label: 'Verde Esmeralda', color: '#059669' },
+                          { label: 'Ámbar Oscuro', color: '#b45309' },
+                          { label: 'Púrpura', color: '#6b21a8' }
+                        ].map(c => (
+                          <button
+                            key={c.color}
+                            type="button"
+                            onMouseDown={e => e.preventDefault()}
+                            onClick={() => applyTextColor(c.color)}
+                            style={{ backgroundColor: c.color }}
+                            title={c.label}
+                            className="w-5 h-5 rounded-full border border-slate-300 hover:scale-115 transition-transform cursor-pointer"
+                          />
+                        ))}
+                      </div>
+                      <div className="pt-1.5 border-t border-slate-100 flex items-center gap-2">
+                        <span className="text-[10px] text-slate-500 font-medium">Personalizado:</span>
+                        <input 
+                          type="color" 
+                          value={selectedTextColor} 
+                          onChange={e => applyTextColor(e.target.value)} 
+                          className="w-5 h-5 rounded border-0 cursor-pointer p-0 bg-transparent" 
+                        />
+                      </div>
                     </div>
                   )}
-                  <div>
-                    <h2 className="text-sm sm:text-base font-black uppercase text-slate-900 tracking-tight">
-                      {companyName || 'MI OFICINA'}
-                    </h2>
-                    {companyRfc && (
-                      <p className="text-[10px] font-mono font-bold text-slate-500 uppercase">
-                        RFC: {companyRfc}
-                      </p>
-                    )}
-                    {companyAddress && (
-                      <p className="text-[10px] text-slate-500 leading-tight">
-                        {companyAddress}
-                      </p>
-                    )}
-                    {companyPhone && (
-                      <p className="text-[10px] text-slate-500 font-semibold">
-                        Tel: {companyPhone}
-                      </p>
-                    )}
+                </div>
+
+                {/* Resaltador de Fondo */}
+                <div className="relative" ref={highlightPickerRef}>
+                  <button
+                    type="button"
+                    onMouseDown={e => e.preventDefault()}
+                    onClick={() => {
+                      setIsHighlightPickerOpen(prev => !prev);
+                      setIsColorPickerOpen(false);
+                    }}
+                    className="p-1.5 hover:bg-white rounded-lg flex items-center gap-1 text-xs font-bold transition-colors cursor-pointer"
+                    title="Color de resaltador de fondo"
+                  >
+                    <Highlighter className="w-3.5 h-3.5 text-amber-600" />
+                    <span className="w-2.5 h-2.5 rounded-full border border-slate-300" style={{ backgroundColor: selectedHighlightColor === 'transparent' ? '#ffffff' : selectedHighlightColor }}></span>
+                  </button>
+
+                  {isHighlightPickerOpen && (
+                    <div className="absolute top-full mt-1 left-0 z-50 bg-white border border-slate-200 rounded-xl shadow-xl p-2.5 flex flex-col gap-2 min-w-[140px] animate-fade-in">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Color Resaltador</span>
+                      <div className="flex items-center gap-1.5">
+                        {[
+                          { label: 'Sin resaltar', color: 'transparent' },
+                          { label: 'Amarillo suave', color: '#fef08a' },
+                          { label: 'Verde menta', color: '#bbf7d0' },
+                          { label: 'Celeste suave', color: '#bae6fd' },
+                          { label: 'Rosa suave', color: '#fbcfe8' }
+                        ].map(c => (
+                          <button
+                            key={c.color}
+                            type="button"
+                            onMouseDown={e => e.preventDefault()}
+                            onClick={() => applyHighlightColor(c.color)}
+                            style={{ backgroundColor: c.color === 'transparent' ? '#f8fafc' : c.color }}
+                            title={c.label}
+                            className="w-6 h-6 rounded-md border border-slate-300 flex items-center justify-center hover:scale-110 transition-transform cursor-pointer text-[10px] font-bold text-slate-600"
+                          >
+                            {c.color === 'transparent' ? '✕' : ''}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Alineación */}
+              <div className="flex items-center gap-0.5 pr-2 border-r border-slate-300">
+                <button
+                  type="button"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => {
+                    executeCmd('justifyLeft');
+                    setIsTextJustified(false);
+                  }}
+                  className="p-1.5 hover:bg-white hover:text-slate-900 rounded-lg transition-colors cursor-pointer"
+                  title="Alinear a la izquierda"
+                >
+                  <AlignLeft className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => {
+                    executeCmd('justifyCenter');
+                    setIsTextJustified(false);
+                  }}
+                  className="p-1.5 hover:bg-white hover:text-slate-900 rounded-lg transition-colors cursor-pointer"
+                  title="Centrar texto"
+                >
+                  <AlignCenter className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => {
+                    executeCmd('justifyRight');
+                    setIsTextJustified(false);
+                  }}
+                  className="p-1.5 hover:bg-white hover:text-slate-900 rounded-lg transition-colors cursor-pointer"
+                  title="Alinear a la derecha"
+                >
+                  <AlignRight className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => {
+                    executeCmd('justifyFull');
+                    setIsTextJustified(true);
+                  }}
+                  className={`p-1.5 rounded-lg transition-colors cursor-pointer ${isTextJustified ? 'bg-white text-emerald-600 font-bold shadow-2xs' : 'hover:bg-white hover:text-slate-900'}`}
+                  title="Justificar texto completo"
+                >
+                  <AlignJustify className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* Listas y Sangría */}
+              <div className="flex items-center gap-0.5 pr-2 border-r border-slate-300">
+                <button
+                  type="button"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => executeCmd('insertUnorderedList')}
+                  className="p-1.5 hover:bg-white hover:text-slate-900 rounded-lg transition-colors cursor-pointer"
+                  title="Lista con viñetas"
+                >
+                  <List className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => executeCmd('insertOrderedList')}
+                  className="p-1.5 hover:bg-white hover:text-slate-900 rounded-lg transition-colors cursor-pointer"
+                  title="Lista numerada"
+                >
+                  <ListOrdered className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => executeCmd('outdent')}
+                  className="p-1.5 hover:bg-white hover:text-slate-900 rounded-lg transition-colors cursor-pointer"
+                  title="Disminuir sangría"
+                >
+                  <Outdent className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => executeCmd('indent')}
+                  className="p-1.5 hover:bg-white hover:text-slate-900 rounded-lg transition-colors cursor-pointer"
+                  title="Aumentar sangría"
+                >
+                  <Indent className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* Elementos Especiales */}
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={insertHorizontalRule}
+                  className="px-2 py-1 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1 text-slate-700 transition-colors cursor-pointer"
+                  title="Insertar línea divisoria horizontal"
+                >
+                  <Minus className="w-3 h-3" />
+                  <span>Línea</span>
+                </button>
+
+                <button
+                  type="button"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={insertSignaturesBlock}
+                  className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg text-xs font-bold flex items-center gap-1 text-indigo-700 transition-colors cursor-pointer"
+                  title="Insertar cuadro de firmas oficial"
+                >
+                  <FileSignature className="w-3 h-3 text-indigo-600" />
+                  <span>Firmas</span>
+                </button>
+
+                <button
+                  type="button"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => executeCmd('removeFormat')}
+                  className="p-1.5 hover:bg-rose-50 hover:text-rose-600 rounded-lg text-slate-400 transition-colors cursor-pointer"
+                  title="Limpiar formato"
+                >
+                  <RemoveFormatting className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Contenedor Exterior de la Hoja Membretada (Imprimible en PDF) */}
+            <div className="p-4 sm:p-8 bg-slate-100/60 flex justify-center overflow-x-auto">
+              <div 
+                ref={sheetPrintRef}
+                id="print-letterhead-sheet"
+                className="p-8 sm:p-12 bg-white text-slate-800 space-y-6 select-text w-full max-w-[850px] shadow-sm border border-slate-200/80 rounded-xl min-h-[1056px] flex flex-col justify-between"
+              >
+                <div className="space-y-6">
+                  {/* Membrete Oficial Institucional */}
+                  <div className="flex items-center justify-between gap-4 border-b-2 border-slate-800 pb-4">
+                    <div className="flex items-center gap-3.5">
+                      {effectiveFormatLogo ? (
+                        <img 
+                          src={effectiveFormatLogo} 
+                          crossOrigin="anonymous"
+                          alt="Logo" 
+                          className="h-14 max-w-[170px] object-contain shrink-0" 
+                        />
+                      ) : (
+                        <div className="p-2.5 bg-slate-100 rounded-xl border border-slate-200 text-slate-700">
+                          <Building2 className="w-6 h-6" />
+                        </div>
+                      )}
+                      <div>
+                        <h2 className="text-sm sm:text-base font-black uppercase text-slate-900 tracking-tight">
+                          {companyName || 'MI OFICINA'}
+                        </h2>
+                        {companyRfc && (
+                          <p className="text-[10px] font-mono font-bold text-slate-500 uppercase">
+                            RFC: {companyRfc}
+                          </p>
+                        )}
+                        {companyAddress && (
+                          <p className="text-[10px] text-slate-500 leading-tight">
+                            {companyAddress}
+                          </p>
+                        )}
+                        {companyPhone && (
+                          <p className="text-[10px] text-slate-500 font-semibold">
+                            Tel: {companyPhone}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="text-right shrink-0">
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Fecha de Emisión</span>
+                      <span className="text-xs font-mono font-bold text-slate-800">{todayStr}</span>
+                    </div>
+                  </div>
+
+                  {/* Título del Documento */}
+                  <div className="text-center pt-2">
+                    <span className="text-xs font-black uppercase tracking-wider text-slate-900 bg-slate-100 px-3 py-1 rounded-md">
+                      {activeFormat.title}
+                    </span>
+                  </div>
+
+                  {/* CUERPO DEL DOCUMENTO: EDITOR DE TEXTO ENRIQUECIDO WYSIWYG */}
+                  <div className="relative pt-2">
+                    <div
+                      ref={editorRef}
+                      contentEditable={true}
+                      suppressContentEditableWarning={true}
+                      onInput={handleEditorInput}
+                      className="outline-none min-h-[550px] text-slate-800 leading-relaxed font-sans select-text p-3 rounded-xl transition-all focus:bg-slate-50/40 border border-transparent hover:border-slate-200 focus:border-indigo-300 [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:mb-3 [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:mb-3 [&_hr]:my-4 [&_hr]:border-slate-300 [&_table]:my-4 [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mb-2 [&_h3]:text-base [&_h3]:font-bold [&_h3]:mb-1"
+                      style={{
+                        fontSize: selectedFontSize,
+                        fontFamily: selectedFontFamily,
+                        lineHeight: '1.75',
+                        textAlign: isTextJustified ? 'justify' : 'left'
+                      }}
+                      data-placeholder="Escribe o formatea el documento aquí..."
+                    />
                   </div>
                 </div>
 
-                <div className="text-right shrink-0">
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Fecha de Emisión</span>
-                  <span className="text-xs font-mono font-bold text-slate-800">{todayStr}</span>
+                {/* Pie de Página de la Hoja */}
+                <div className="pt-6 border-t border-slate-200 text-center font-sans text-[10px] text-slate-400">
+                  Documento expedido y certificado para fines legales y administrativos &bull; {companyName || 'Mi Oficina'}
                 </div>
-              </div>
 
-              {/* Título del Documento */}
-              <div className="text-center pt-2">
-                <span className="text-xs font-black uppercase tracking-wider text-slate-900 bg-slate-100 px-3 py-1 rounded-md">
-                  {activeFormat.title}
-                </span>
               </div>
-
-              {/* TEXTO DE LA HOJA: DIRECTAMENTE EDITABLE POR EL USUARIO */}
-              <div className="relative">
-                <textarea
-                  ref={liveDocumentRef}
-                  value={liveDocumentText}
-                  onChange={e => setLiveDocumentText(e.target.value)}
-                  rows={26}
-                  style={{ textAlign: isTextJustified ? 'justify' : 'left' }}
-                  className="w-full bg-transparent font-sans text-xs text-slate-800 leading-relaxed border border-transparent hover:border-slate-200 focus:border-indigo-400 focus:bg-slate-50/50 rounded-xl p-3.5 outline-none transition-all resize-y select-text"
-                  placeholder="El documento membretado aparecerá aquí..."
-                />
-              </div>
-
-              {/* Pie de Página de la Hoja */}
-              <div className="pt-6 border-t border-slate-200 text-center font-sans text-[10px] text-slate-400">
-                Documento expedido y certificado para fines legales y administrativos &bull; {companyName || 'Mi Oficina'}
-              </div>
-
             </div>
 
           </div>
