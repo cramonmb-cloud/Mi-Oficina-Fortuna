@@ -115,6 +115,7 @@ export interface DocumentFormatConfig {
   iconName?: string;
   badgeColor?: string;
   template: string;
+  htmlTemplate?: string;
   isCustom?: boolean;
   createdAt?: string;
   updatedAt?: string;

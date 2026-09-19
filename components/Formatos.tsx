@@ -58,7 +58,8 @@ import {
   Type,
   Highlighter,
   Palette,
-  Minus
+  Minus,
+  Calendar
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import { Employee, Plaza, DocumentFormatConfig, GeneratedDocumentRecord } from '../types';
@@ -473,6 +474,40 @@ const AVAILABLE_TAG_GROUPS = [
   }
 ];
 
+// Formateador de fecha extendida en español (ej: "Viernes 18 de Junio del 2026")
+export const formatLongDateSpanish = (dateInput?: string | Date): string => {
+  let d: Date;
+  if (!dateInput) {
+    d = new Date();
+  } else if (typeof dateInput === 'string') {
+    const parts = dateInput.split('T')[0].split('-');
+    if (parts.length === 3) {
+      d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+    } else {
+      d = new Date(dateInput);
+    }
+  } else {
+    d = dateInput;
+  }
+
+  if (isNaN(d.getTime())) {
+    d = new Date();
+  }
+
+  const days = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+  const months = [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+  ];
+
+  const dayName = days[d.getDay()];
+  const dayNum = d.getDate();
+  const monthName = months[d.getMonth()];
+  const year = d.getFullYear();
+
+  return `${dayName} ${dayNum} de ${monthName} del ${year}`;
+};
+
 export const Formatos: React.FC<FormatosProps> = ({
   companyName,
   companyLogoUrl,
@@ -484,6 +519,18 @@ export const Formatos: React.FC<FormatosProps> = ({
   currentUser
 }) => {
   const todayStr = new Date().toISOString().split('T')[0];
+
+  // Fecha de emisión editable (formato YYYY-MM-DD para el selector de fecha)
+  const [emissionDate, setEmissionDate] = useState<string>(() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  });
+
+  const formattedEmissionDate = useMemo(() => formatLongDateSpanish(emissionDate), [emissionDate]);
+  const [isEmissionDateModalOpen, setIsEmissionDateModalOpen] = useState(false);
 
   // 1. Estado de Formatos / Catálogo
   const [documentFormats, setDocumentFormats] = useState<DocumentFormatConfig[]>(() => {
@@ -567,8 +614,11 @@ export const Formatos: React.FC<FormatosProps> = ({
   const [historySearchQuery, setHistorySearchQuery] = useState('');
 
   // Empleado seleccionado para autollenar datos
-  // Empleado seleccionado para autollenar datos
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('');
+
+  const selectedEmployeeObj = useMemo(() => {
+    return employees.find(e => e.id === selectedEmployeeId) || null;
+  }, [employees, selectedEmployeeId]);
 
   // TEXTO Y FORMATO EN VIVO DE LA HOJA MEMBRETADA (EDITOR RICO WYSIWYG)
   const [liveDocumentText, setLiveDocumentText] = useState<string>('');
@@ -581,6 +631,12 @@ export const Formatos: React.FC<FormatosProps> = ({
   const [selectedHighlightColor, setSelectedHighlightColor] = useState<string>('transparent');
   const [isColorPickerOpen, setIsColorPickerOpen] = useState(false);
   const [isHighlightPickerOpen, setIsHighlightPickerOpen] = useState(false);
+
+  // Estados para guardado persistente del formato y estilos
+  const [isSavingFormatTemplate, setIsSavingFormatTemplate] = useState(false);
+  const [saveFormatSuccessMsg, setSaveFormatSuccessMsg] = useState<string | null>(null);
+  const [hasUnsavedFormatChanges, setHasUnsavedFormatChanges] = useState(false);
+  const autoSaveTimeoutRef = useRef<any>(null);
 
   // Refs para el editor de contenido y la hoja imprimible
   const editorRef = useRef<HTMLDivElement>(null);
@@ -722,12 +778,142 @@ export const Formatos: React.FC<FormatosProps> = ({
       .join('');
   };
 
+  // Reemplazar valores específicos de un empleado por los tags de plantilla [NOMBRE], [CURP], etc.
+  // para que al guardar el formato, éste sea reutilizable para cualquier otro empleado.
+  const getTemplateWithPlaceholders = (content: string, emp?: Employee | null): string => {
+    let result = content;
+    if (!emp) return result;
+
+    const empName = `${emp.firstName} ${emp.lastName}`.trim();
+    if (empName && empName.length > 2) {
+      result = result.split(empName.toUpperCase()).join('[NOMBRE]');
+      result = result.split(empName).join('[NOMBRE]');
+    }
+    if (emp.curp && emp.curp.length >= 8) {
+      result = result.split(emp.curp.toUpperCase()).join('[CURP]');
+      result = result.split(emp.curp).join('[CURP]');
+    }
+    if (emp.position) {
+      result = result.split(emp.position).join('[PUESTO]');
+    }
+    if (emp.guarantorName && emp.guarantorName.length > 2) {
+      result = result.split(emp.guarantorName.toUpperCase()).join('[AVAL_NOMBRE]');
+      result = result.split(emp.guarantorName).join('[AVAL_NOMBRE]');
+    }
+    if (emp.guarantorAddress && emp.guarantorAddress.length > 4) {
+      result = result.split(emp.guarantorAddress).join('[AVAL_DOMICILIO]');
+    }
+    if (emp.guarantorPhone && emp.guarantorPhone.length >= 7) {
+      result = result.split(emp.guarantorPhone).join('[AVAL_TELEFONO]');
+    }
+    if (emp.phone && emp.phone.length >= 7) {
+      result = result.split(emp.phone).join('[TELEFONO_PERSONA]');
+    }
+    if (emp.address && emp.address.length > 5) {
+      result = result.split(emp.address).join('[DOMICILIO_PERSONA]');
+    }
+    if (formattedEmissionDate) {
+      result = result.split(formattedEmissionDate).join('[FECHA_ACTUAL]');
+    }
+    if (emissionDate) {
+      result = result.split(emissionDate).join('[FECHA_ACTUAL]');
+    }
+    return result;
+  };
+
+  // Actualizar la fecha de emisión y refrescar el documento sin perder estilos
+  const handleEmissionDateChange = (newDate: string) => {
+    const oldFormatted = formattedEmissionDate;
+    setEmissionDate(newDate);
+    const newFormatted = formatLongDateSpanish(newDate);
+
+    if (editorRef.current) {
+      let currentHtml = editorRef.current.innerHTML;
+      if (currentHtml.includes(oldFormatted)) {
+        currentHtml = currentHtml.split(oldFormatted).join(newFormatted);
+        editorRef.current.innerHTML = currentHtml;
+        setLiveDocumentHtml(currentHtml);
+        setLiveDocumentText(editorRef.current.innerText || '');
+        triggerAutoSaveDebounced();
+      } else if (currentHtml.includes(todayStr)) {
+        currentHtml = currentHtml.split(todayStr).join(newFormatted);
+        editorRef.current.innerHTML = currentHtml;
+        setLiveDocumentHtml(currentHtml);
+        setLiveDocumentText(editorRef.current.innerText || '');
+        triggerAutoSaveDebounced();
+      }
+    }
+  };
+
+  const handleQuickDate = (offsetDays: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() + offsetDays);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    handleEmissionDateChange(`${y}-${m}-${day}`);
+  };
+
+  // Guardar el formato y sus estilos (WYSIWYG) de forma permanente en localStorage y Firestore
+  const handleSaveFormatTemplate = async (silent = false) => {
+    if (!editorRef.current) return;
+    setIsSavingFormatTemplate(true);
+    try {
+      const currentHtml = editorRef.current.innerHTML;
+      const currentText = editorRef.current.innerText;
+      
+      const htmlToSave = getTemplateWithPlaceholders(currentHtml, selectedEmployeeObj);
+      const textToSave = getTemplateWithPlaceholders(currentText, selectedEmployeeObj);
+
+      const updated = documentFormats.map(fmt => {
+        if (fmt.id === activeFormat.id) {
+          return {
+            ...fmt,
+            template: textToSave,
+            htmlTemplate: htmlToSave,
+            updatedAt: new Date().toISOString()
+          };
+        }
+        return fmt;
+      });
+
+      setDocumentFormats(updated);
+      localStorage.setItem('custom_document_formats_v1', JSON.stringify(updated));
+      await saveDocumentFormatsToCloud(updated);
+
+      setHasUnsavedFormatChanges(false);
+      if (!silent) {
+        setSaveFormatSuccessMsg('¡Estilo y formato guardados con éxito!');
+        setTimeout(() => setSaveFormatSuccessMsg(null), 3500);
+      }
+    } catch (err) {
+      console.error("Error al guardar formato y estilos:", err);
+      if (!silent) {
+        alert("Hubo un detalle al sincronizar con la nube, pero el formato se guardó localmente.");
+      }
+    } finally {
+      setIsSavingFormatTemplate(false);
+    }
+  };
+
+  // Temporizador de autoguardado suave
+  const triggerAutoSaveDebounced = () => {
+    setHasUnsavedFormatChanges(true);
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+    }
+    autoSaveTimeoutRef.current = setTimeout(() => {
+      handleSaveFormatTemplate(true);
+    }, 2500);
+  };
+
   // Ejecutor de comandos para el editor enriquecido
   const handleEditorInput = () => {
     if (editorRef.current) {
       const html = editorRef.current.innerHTML;
       setLiveDocumentHtml(html);
       setLiveDocumentText(editorRef.current.innerText || '');
+      triggerAutoSaveDebounced();
     }
   };
 
@@ -963,8 +1149,9 @@ export const Formatos: React.FC<FormatosProps> = ({
       RFC_EMPRESA: rfcStr,
       DOMICILIO_EMPRESA: domStr,
       TELEFONO_EMPRESA: telStr,
-      FECHA_ACTUAL: todayStr,
-      FECHA_HOY: todayStr,
+      FECHA_ACTUAL: formattedEmissionDate,
+      FECHA_HOY: formattedEmissionDate,
+      FECHA_EMISION: formattedEmissionDate,
       NOMBRE_PERSONA: empName,
       NOMBRE_TRABAJADOR: empName,
       NOMBRE_CLIENTE: empName,
@@ -980,8 +1167,8 @@ export const Formatos: React.FC<FormatosProps> = ({
       AVAL_TELEFONO: emp?.guarantorPhone || 'Teléfono del aval',
       FECHA_INICIO: empHireDate,
       FECHA_INGRESO: empHireDate,
-      FECHA_FIN: todayStr,
-      FECHA_BAJA: todayStr,
+      FECHA_FIN: formattedEmissionDate,
+      FECHA_BAJA: formattedEmissionDate,
       SUELDO_DIARIO: dailySalary,
       SUELDO_PENDIENTE: pendingSalary,
       FOLIO_CREDITO: `CR-${todayStr.replace(/-/g, '')}-01`,
@@ -1000,45 +1187,78 @@ export const Formatos: React.FC<FormatosProps> = ({
     return text;
   };
 
-  const selectedEmployeeObj = useMemo(() => {
-    return employees.find(e => e.id === selectedEmployeeId) || null;
-  }, [employees, selectedEmployeeId]);
-
   // Inicializar o sincronizar el texto en vivo de la hoja membretada al cambiar de formato o machote
   useEffect(() => {
     const emp = selectedEmployeeObj;
-    const compiled = compileTemplateWithEmployee(activeFormat.template, emp);
-    const html = textToHtml(compiled);
-    setLiveDocumentText(compiled);
-    setLiveDocumentHtml(html);
-    if (editorRef.current) {
-      editorRef.current.innerHTML = html;
+    if (activeFormat.htmlTemplate && activeFormat.htmlTemplate.trim().length > 0) {
+      const compiledHtml = compileTemplateWithEmployee(activeFormat.htmlTemplate, emp);
+      setLiveDocumentHtml(compiledHtml);
+      setLiveDocumentText(activeFormat.template || '');
+      if (editorRef.current) {
+        editorRef.current.innerHTML = compiledHtml;
+      }
+    } else {
+      const compiled = compileTemplateWithEmployee(activeFormat.template, emp);
+      const html = textToHtml(compiled);
+      setLiveDocumentText(compiled);
+      setLiveDocumentHtml(html);
+      if (editorRef.current) {
+        editorRef.current.innerHTML = html;
+      }
     }
-  }, [activeFormat.id, activeFormat.template]);
+    setHasUnsavedFormatChanges(false);
+  }, [activeFormat.id, activeFormat.template, activeFormat.htmlTemplate]);
 
   // Al seleccionar un empleado del dropdown: inyectar automáticamente en el texto
   const handleSelectEmployee = (empId: string) => {
     setSelectedEmployeeId(empId);
     const emp = employees.find(e => e.id === empId) || null;
-    const compiled = compileTemplateWithEmployee(activeFormat.template, emp);
-    const html = textToHtml(compiled);
-    setLiveDocumentText(compiled);
-    setLiveDocumentHtml(html);
-    if (editorRef.current) {
-      editorRef.current.innerHTML = html;
+    if (activeFormat.htmlTemplate && activeFormat.htmlTemplate.trim().length > 0) {
+      const compiledHtml = compileTemplateWithEmployee(activeFormat.htmlTemplate, emp);
+      setLiveDocumentHtml(compiledHtml);
+      if (editorRef.current) {
+        editorRef.current.innerHTML = compiledHtml;
+      }
+    } else {
+      const compiled = compileTemplateWithEmployee(activeFormat.template, emp);
+      const html = textToHtml(compiled);
+      setLiveDocumentText(compiled);
+      setLiveDocumentHtml(html);
+      if (editorRef.current) {
+        editorRef.current.innerHTML = html;
+      }
     }
   };
 
   // Restablecer texto de la hoja membretada al machote original con datos del empleado
   const handleResetLiveText = () => {
+    if (!window.confirm(`¿Deseas restablecer el formato y estilos de "${activeFormat.title}" a su plantilla original predeterminada?`)) {
+      return;
+    }
+    const defaultObj = DEFAULT_DOCUMENT_FORMATS.find(d => d.id === activeFormat.id);
+    const templateToUse = defaultObj ? defaultObj.template : activeFormat.template;
     const emp = selectedEmployeeObj;
-    const compiled = compileTemplateWithEmployee(activeFormat.template, emp);
+    const compiled = compileTemplateWithEmployee(templateToUse, emp);
     const html = textToHtml(compiled);
     setLiveDocumentText(compiled);
     setLiveDocumentHtml(html);
     if (editorRef.current) {
       editorRef.current.innerHTML = html;
     }
+    const updated = documentFormats.map(fmt => {
+      if (fmt.id === activeFormat.id) {
+        const copy = { ...fmt, template: templateToUse };
+        delete copy.htmlTemplate;
+        return copy;
+      }
+      return fmt;
+    });
+    setDocumentFormats(updated);
+    localStorage.setItem('custom_document_formats_v1', JSON.stringify(updated));
+    saveDocumentFormatsToCloud(updated).catch(console.error);
+    setSaveFormatSuccessMsg('Formato restablecido a la plantilla original.');
+    setHasUnsavedFormatChanges(false);
+    setTimeout(() => setSaveFormatSuccessMsg(null), 3000);
   };
 
   // Guardar documento generado en el Historial
@@ -1353,6 +1573,9 @@ export const Formatos: React.FC<FormatosProps> = ({
     setIsGeneratingPdf(true);
     try {
       if (sheetPrintRef.current) {
+        // Asegurar que los cambios de formato y estilo queden guardados permanentemente
+        handleSaveFormatTemplate(true).catch(console.error);
+
         const element = sheetPrintRef.current;
         
         // Renderizado de ultra-alta definición (scale: 2) para texto nítido y logotipos impecables
@@ -1361,34 +1584,74 @@ export const Formatos: React.FC<FormatosProps> = ({
           useCORS: true,
           logging: false,
           backgroundColor: '#ffffff',
-          windowWidth: element.scrollWidth
+          windowWidth: element.scrollWidth,
+          onclone: (clonedDoc) => {
+            const clonedSheet = clonedDoc.getElementById('print-letterhead-sheet');
+            if (clonedSheet) {
+              clonedSheet.style.border = 'none';
+              clonedSheet.style.outline = 'none';
+              clonedSheet.style.boxShadow = 'none';
+              clonedSheet.style.borderRadius = '0';
+            }
+          }
         });
 
         const imgData = canvas.toDataURL('image/jpeg', 0.98);
-        const pdf = new jsPDF('p', 'mm', 'letter');
+        const pdf = new jsPDF({
+          orientation: 'portrait',
+          unit: 'mm',
+          format: 'letter' // 215.9 x 279.4 mm
+        });
         const pdfWidth = pdf.internal.pageSize.getWidth(); // 215.9 mm
         const pdfHeight = pdf.internal.pageSize.getHeight(); // 279.4 mm
 
-        const imgWidth = pdfWidth;
-        const imgHeight = (canvas.height * pdfWidth) / canvas.width;
+        // Relación de aspecto Carta: 279.4 / 215.9 = 1.2941
+        const canvasAspect = canvas.height / canvas.width;
+        const letterAspect = pdfHeight / pdfWidth; // ~1.2941
 
-        let heightLeft = imgHeight;
-        let position = 0;
+        // LA REGLA PRINCIPAL:
+        // Principalmente todos los formatos en su mayoría saldrán en EXACTAMENTE 1 HOJA tamaño carta.
+        // Solo si la información es verdaderamente larga (más de 1.45 hojas carta) se divide en múltiples páginas.
+        if (canvasAspect <= letterAspect * 1.45) {
+          // AJUSTE PERFECTO EN 1 SOLA HOJA TAMAÑO CARTA
+          let renderWidth = pdfWidth;
+          let renderHeight = (canvas.height * pdfWidth) / canvas.width;
 
-        // Página 1
-        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
-        heightLeft -= pdfHeight;
+          // Si sobrepasa la altura de la hoja carta, escalamos proporcionalmente para que quepa al 100%
+          if (renderHeight > pdfHeight) {
+            const scaleFactor = pdfHeight / renderHeight;
+            renderHeight = pdfHeight;
+            renderWidth = pdfWidth * scaleFactor;
+          }
 
-        // Páginas adicionales si el documento es más extenso que 1 hoja
-        while (heightLeft > 2) {
-          position -= pdfHeight;
-          pdf.addPage();
+          // Centrado uniforme en la página
+          const offsetX = (pdfWidth - renderWidth) / 2;
+          const offsetY = (pdfHeight - renderHeight) / 2;
+
+          pdf.addImage(imgData, 'JPEG', offsetX, offsetY, renderWidth, renderHeight, undefined, 'FAST');
+        } else {
+          // Documento excepcionalmente largo: se distribuye en 2 o más hojas carta manteniendo la calidad
+          const imgWidth = pdfWidth;
+          const imgHeight = (canvas.height * pdfWidth) / canvas.width;
+
+          let heightLeft = imgHeight;
+          let position = 0;
+
+          // Página 1
           pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
           heightLeft -= pdfHeight;
+
+          // Páginas siguientes (umbral de 6 mm para evitar páginas huérfanas en blanco)
+          while (heightLeft > 6) {
+            position -= pdfHeight;
+            pdf.addPage();
+            pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+            heightLeft -= pdfHeight;
+          }
         }
 
         const cleanPrefix = (activeFormat.title || 'Documento').replace(/[^a-zA-Z0-9_-]/g, '_');
-        pdf.save(`${cleanPrefix}_${todayStr}.pdf`);
+        pdf.save(`${cleanPrefix}_${emissionDate}.pdf`);
 
         // Guardar automáticamente en el Historial con el formato enriquecido
         await handleSaveToHistory(editorRef.current?.innerHTML || liveDocumentHtml);
@@ -1396,7 +1659,7 @@ export const Formatos: React.FC<FormatosProps> = ({
         generateOfficialPdf(
           activeFormat.title, 
           editorRef.current?.innerText || liveDocumentText, 
-          new Date().toLocaleString('es-MX'), 
+          formattedEmissionDate, 
           activeFormat.title
         );
       }
@@ -2030,77 +2293,85 @@ export const Formatos: React.FC<FormatosProps> = ({
               )}
             </div>
 
-            {/* LADO DERECHO: BOTONES DE ACCIÓN DE LA HOJA (COMPACTOS) */}
-            <div className="flex items-center gap-1.5 self-end md:self-auto shrink-0 flex-wrap">
+            {/* LADO DERECHO: ACCIONES CLAVE DEL FORMATO */}
+            <div className="flex items-center gap-2 self-end md:self-auto shrink-0 flex-wrap justify-end">
+              {/* Botón Justificar */}
               <button
+                type="button"
                 onClick={handleToggleJustify}
-                className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer border ${
+                className={`h-9 px-3.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border ${
                   isTextJustified
-                    ? 'bg-emerald-50 border-emerald-300 text-emerald-800 font-bold'
-                    : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700'
+                    ? 'bg-emerald-50 border-emerald-300 text-emerald-800 shadow-2xs'
+                    : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700 shadow-2xs'
                 }`}
-                title={isTextJustified ? 'Texto Justificado (Click para alinear a la izquierda)' : 'Texto Alineado a la Izquierda (Click para justificar)'}
+                title={isTextJustified ? 'Texto Justificado (Clic para alinear a la izquierda)' : 'Texto Alineado a la Izquierda (Clic para justificar)'}
               >
-                {isTextJustified ? <AlignJustify className="w-3.5 h-3.5 text-emerald-600" /> : <AlignLeft className="w-3.5 h-3.5 text-slate-500" />}
-                <span>{isTextJustified ? 'Justificado' : 'Alinear Izq'}</span>
+                {isTextJustified ? (
+                  <AlignJustify className="w-4 h-4 text-emerald-600 shrink-0" />
+                ) : (
+                  <AlignLeft className="w-4 h-4 text-slate-400 shrink-0" />
+                )}
+                <span>{isTextJustified ? 'Justificado' : 'Justificar'}</span>
               </button>
 
+              {/* Botón Guardar Formato */}
               <button
-                onClick={handleResetLiveText}
-                className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer"
-                title="Restablecer el texto de la hoja al machote original"
+                type="button"
+                onClick={() => handleSaveFormatTemplate(false)}
+                disabled={isSavingFormatTemplate}
+                className={`h-9 px-3.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border ${
+                  hasUnsavedFormatChanges
+                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 shadow-xs animate-pulse'
+                    : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700 shadow-2xs'
+                }`}
+                title="Guardar este texto y estilo como la plantilla permanente de este documento"
               >
-                <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
-                <span>Restablecer</span>
+                {saveFormatSuccessMsg ? (
+                  <Check className="w-4 h-4 text-emerald-500 shrink-0" />
+                ) : (
+                  <Save className={`w-4 h-4 shrink-0 ${hasUnsavedFormatChanges ? 'text-white' : 'text-slate-400'}`} />
+                )}
+                <span>
+                  {saveFormatSuccessMsg 
+                    ? '¡Guardado!' 
+                    : isSavingFormatTemplate 
+                    ? 'Guardando...' 
+                    : 'Guardar Formato'}
+                </span>
               </button>
 
+              {/* Botón Historial */}
               <button
+                type="button"
                 onClick={() => handleSaveToHistory()}
-                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold flex items-center gap-1 border border-slate-200 transition-all cursor-pointer"
+                className="h-9 px-3.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
                 title="Guardar una copia de este documento en el historial"
               >
-                <Save className="w-3.5 h-3.5 text-indigo-600" />
-                <span>Guardar</span>
+                <FileCheck2 className="w-4 h-4 text-indigo-600 shrink-0" />
+                <span>Historial</span>
               </button>
 
-              <button
-                onClick={() => handleCopyText()}
-                className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer"
-                title="Copiar texto al portapapeles"
-              >
-                {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-slate-500" />}
-                <span>{copied ? 'Copiado' : 'Copiar'}</span>
-              </button>
+              {/* Separador vertical sutil */}
+              <div className="h-5 w-px bg-slate-200 hidden sm:block mx-0.5" />
 
+              {/* Botón Descargar PDF (Acción Principal) */}
               <button
+                type="button"
                 onClick={handleDownloadPdf}
                 disabled={isGeneratingPdf}
-                className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all disabled:opacity-50 cursor-pointer"
+                className="h-9 px-4 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-black flex items-center gap-2 shadow-xs transition-all disabled:opacity-50 cursor-pointer shrink-0"
+                title="Descargar documento en PDF tamaño carta"
               >
-                <Download className="w-3.5 h-3.5 text-emerald-400" />
-                <span>{isGeneratingPdf ? 'Generando...' : 'Descargar en PDF'}</span>
+                <Download className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>{isGeneratingPdf ? 'Generando PDF...' : 'Descargar PDF'}</span>
               </button>
             </div>
 
           </div>
 
-
           {/* HOJA DIGITAL TAMAÑO CARTA CON EDICIÓN DIRECTA EN VIVO */}
           <div className="bg-white rounded-2xl border border-slate-300/90 shadow-xl overflow-hidden flex flex-col">
             
-            {/* Barra superior informativa */}
-            <div className="bg-slate-50 px-5 py-2.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs">
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span className="font-bold text-slate-800 uppercase tracking-wider text-[11px]">
-                  Editor de Formato y Vista Previa Membretada
-                </span>
-              </div>
-              <div className="flex items-center gap-2 text-[11px] text-slate-500 font-medium">
-                <span>Edita el texto directamente y aplica negritas, tamaños, colores y alineación</span>
-              </div>
-            </div>
-
             {/* BARRA DE HERRAMIENTAS DE EDICIÓN RICA (RICH TEXT TOOLBAR COMPLETA) */}
             <div className="bg-slate-100/95 border-b border-slate-200 px-4 py-2 flex flex-wrap items-center gap-1.5 text-slate-700 select-none">
               
@@ -2429,78 +2700,131 @@ export const Formatos: React.FC<FormatosProps> = ({
                   <RemoveFormatting className="w-3.5 h-3.5" />
                 </button>
               </div>
+
+              {/* Guardado Persistente de la Plantilla en Barra */}
+              <div className="ml-auto flex items-center gap-1.5 pl-2">
+                {saveFormatSuccessMsg && (
+                  <span className="text-[10px] font-bold text-emerald-600 animate-fade-in flex items-center gap-1">
+                    <Check className="w-3 h-3" />
+                    {saveFormatSuccessMsg}
+                  </span>
+                )}
+                {hasUnsavedFormatChanges && !saveFormatSuccessMsg && (
+                  <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200/80">
+                    Cambios sin guardar
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => handleSaveFormatTemplate(false)}
+                  disabled={isSavingFormatTemplate}
+                  className={`h-7 px-2.5 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                    hasUnsavedFormatChanges 
+                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs animate-pulse' 
+                      : 'bg-slate-900 hover:bg-black text-white'
+                  }`}
+                  title="Guardar el texto y formato como la plantilla permanente de este documento"
+                >
+                  <Save className="w-3 h-3 text-emerald-400" />
+                  <span>{isSavingFormatTemplate ? 'Guardando...' : 'Guardar'}</span>
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={handleResetLiveText}
+                  className="h-7 px-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                  title="Restablecer este formato a su plantilla oficial predeterminada"
+                >
+                  <RotateCcw className="w-3 h-3 text-slate-400" />
+                  <span>Restablecer</span>
+                </button>
+              </div>
             </div>
 
             {/* Contenedor Exterior de la Hoja Membretada (Imprimible en PDF) */}
             <div className="p-4 sm:p-8 bg-slate-100/60 flex justify-center overflow-x-auto">
-              <div 
-                ref={sheetPrintRef}
-                id="print-letterhead-sheet"
-                className="p-8 sm:p-12 bg-white text-slate-800 space-y-6 select-text w-full max-w-[850px] shadow-sm border border-slate-200/80 rounded-xl min-h-[1056px] flex flex-col justify-between"
-              >
-                <div className="space-y-6">
-                  {/* Membrete Oficial Institucional */}
-                  <div className="flex items-center justify-between gap-4 border-b-2 border-slate-800 pb-4">
-                    <div className="flex items-center gap-3.5">
-                      {effectiveFormatLogo ? (
-                        <img 
-                          src={effectiveFormatLogo} 
-                          crossOrigin="anonymous"
-                          alt="Logo" 
-                          className="h-14 max-w-[170px] object-contain shrink-0" 
-                        />
-                      ) : (
-                        <div className="p-2.5 bg-slate-100 rounded-xl border border-slate-200 text-slate-700">
-                          <Building2 className="w-6 h-6" />
+              <div className="bg-white shadow-md border border-slate-200/80 rounded-2xl overflow-hidden max-w-[816px] w-full flex justify-center">
+                <div 
+                  ref={sheetPrintRef}
+                  id="print-letterhead-sheet"
+                  className="p-6 sm:px-10 sm:py-8 bg-white text-slate-800 space-y-4 select-text w-full max-w-[816px] min-h-[1056px] flex flex-col justify-between border-0 shadow-none rounded-none outline-none"
+                  style={{ border: 'none', outline: 'none', boxShadow: 'none', borderRadius: '0' }}
+                >
+                  <div className="space-y-4">
+                    {/* Membrete Oficial Institucional */}
+                    <div className="flex items-center justify-between gap-4 border-b-2 border-slate-800 pb-3">
+                      <div className="flex items-center gap-3">
+                        {effectiveFormatLogo ? (
+                          <img 
+                            src={effectiveFormatLogo} 
+                            crossOrigin="anonymous"
+                            alt="Logo" 
+                            className="h-12 max-w-[160px] object-contain shrink-0" 
+                          />
+                        ) : (
+                          <div className="p-2 bg-slate-100 rounded-xl border border-slate-200 text-slate-700">
+                            <Building2 className="w-5 h-5" />
+                          </div>
+                        )}
+                        <div>
+                          <h2 className="text-xs sm:text-sm font-black uppercase text-slate-900 tracking-tight">
+                            {companyName || 'MI OFICINA'}
+                          </h2>
+                          {companyRfc && (
+                            <p className="text-[9px] font-mono font-bold text-slate-500 uppercase">
+                              RFC: {companyRfc}
+                            </p>
+                          )}
+                          {companyAddress && (
+                            <p className="text-[9px] text-slate-500 leading-tight">
+                              {companyAddress}
+                            </p>
+                          )}
+                          {companyPhone && (
+                            <p className="text-[9px] text-slate-500 font-semibold">
+                              Tel: {companyPhone}
+                            </p>
+                          )}
                         </div>
-                      )}
-                      <div>
-                        <h2 className="text-sm sm:text-base font-black uppercase text-slate-900 tracking-tight">
-                          {companyName || 'MI OFICINA'}
-                        </h2>
-                        {companyRfc && (
-                          <p className="text-[10px] font-mono font-bold text-slate-500 uppercase">
-                            RFC: {companyRfc}
-                          </p>
-                        )}
-                        {companyAddress && (
-                          <p className="text-[10px] text-slate-500 leading-tight">
-                            {companyAddress}
-                          </p>
-                        )}
-                        {companyPhone && (
-                          <p className="text-[10px] text-slate-500 font-semibold">
-                            Tel: {companyPhone}
-                          </p>
-                        )}
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        <button 
+                          type="button"
+                          onClick={() => setIsEmissionDateModalOpen(true)}
+                          className="cursor-pointer text-right group p-0 bg-transparent border-0 outline-none block"
+                          title="Hacer clic para modificar la fecha de emisión del documento"
+                        >
+                          <span className="text-[9px] uppercase font-bold text-slate-400 block tracking-wider mb-0.5">
+                            Fecha de Emisión
+                          </span>
+                          <span className="text-xs font-bold text-slate-800 font-sans group-hover:text-indigo-600 transition-colors">
+                            {formattedEmissionDate}
+                          </span>
+                        </button>
                       </div>
                     </div>
 
-                    <div className="text-right shrink-0">
-                      <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Fecha de Emisión</span>
-                      <span className="text-xs font-mono font-bold text-slate-800">{todayStr}</span>
-                    </div>
-                  </div>
-
                   {/* Título del Documento */}
-                  <div className="text-center pt-2">
-                    <span className="text-xs font-black uppercase tracking-wider text-slate-900 bg-slate-100 px-3 py-1 rounded-md">
+                  <div className="text-center pt-2 pb-1">
+                    <h1 className="text-sm font-black uppercase tracking-widest text-slate-900 font-sans">
                       {activeFormat.title}
-                    </span>
+                    </h1>
                   </div>
 
                   {/* CUERPO DEL DOCUMENTO: EDITOR DE TEXTO ENRIQUECIDO WYSIWYG */}
-                  <div className="relative pt-2">
+                  <div className="relative pt-1">
                     <div
                       ref={editorRef}
                       contentEditable={true}
                       suppressContentEditableWarning={true}
                       onInput={handleEditorInput}
-                      className="outline-none min-h-[550px] text-slate-800 leading-relaxed font-sans select-text p-3 rounded-xl transition-all focus:bg-slate-50/40 border border-transparent hover:border-slate-200 focus:border-indigo-300 [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:mb-3 [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:mb-3 [&_hr]:my-4 [&_hr]:border-slate-300 [&_table]:my-4 [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mb-2 [&_h3]:text-base [&_h3]:font-bold [&_h3]:mb-1"
+                      className="outline-none min-h-[500px] text-slate-800 leading-relaxed font-sans select-text p-2 rounded-xl transition-all focus:bg-slate-50/40 border border-transparent hover:border-slate-200 focus:border-indigo-300 [&_p]:mb-2.5 [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:mb-2.5 [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:mb-2.5 [&_hr]:my-3 [&_hr]:border-slate-300 [&_table]:my-3 [&_h1]:text-lg [&_h1]:font-bold [&_h1]:mb-2 [&_h2]:text-base [&_h2]:font-bold [&_h2]:mb-2 [&_h3]:text-sm [&_h3]:font-bold [&_h3]:mb-1"
                       style={{
                         fontSize: selectedFontSize,
                         fontFamily: selectedFontFamily,
-                        lineHeight: '1.75',
+                        lineHeight: '1.65',
                         textAlign: isTextJustified ? 'justify' : 'left'
                       }}
                       data-placeholder="Escribe o formatea el documento aquí..."
@@ -2509,17 +2833,17 @@ export const Formatos: React.FC<FormatosProps> = ({
                 </div>
 
                 {/* Pie de Página de la Hoja */}
-                <div className="pt-6 border-t border-slate-200 text-center font-sans text-[10px] text-slate-400">
+                <div className="pt-4 border-t border-slate-200 text-center font-sans text-[9px] text-slate-400">
                   Documento expedido y certificado para fines legales y administrativos &bull; {companyName || 'Mi Oficina'}
                 </div>
 
               </div>
             </div>
-
           </div>
 
         </div>
-      )}
+      </div>
+    )}
 
       {/* ======================================================== */}
       {/* SUB-TAB 2: EDITOR DE MACHOTE (PLANTILLA BASE)            */}
@@ -2916,6 +3240,112 @@ export const Formatos: React.FC<FormatosProps> = ({
                 </div>
               </div>
             </form>
+
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: FECHA DE EMISIÓN EDITABLE DEL DOCUMENTO           */}
+      {/* ======================================================== */}
+      {isEmissionDateModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-scale-in">
+            
+            {/* Header del Modal */}
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100">
+                  <Calendar className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">
+                    Fecha de Emisión
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Modifica la fecha oficial del documento
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsEmissionDateModalOpen(false)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Contenido del Modal */}
+            <div className="p-5 space-y-4">
+              
+              {/* Selector de Fecha */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 block">
+                  Selecciona la Fecha:
+                </label>
+                <input
+                  type="date"
+                  value={emissionDate}
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      handleEmissionDateChange(e.target.value);
+                    }
+                  }}
+                  className="w-full bg-slate-50 border-2 border-indigo-200 focus:border-indigo-500 focus:bg-white rounded-xl px-3.5 py-2.5 text-sm font-black text-slate-800 outline-none transition-all cursor-pointer shadow-2xs"
+                />
+              </div>
+
+              {/* Botones de Acceso Rápido */}
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  Accesos Rápidos:
+                </span>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleQuickDate(0)}
+                    className="px-2 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 transition-all cursor-pointer text-center"
+                  >
+                    Hoy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickDate(-1)}
+                    className="px-2 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 transition-all cursor-pointer text-center"
+                  >
+                    Ayer
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickDate(1)}
+                    className="px-2 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 transition-all cursor-pointer text-center"
+                  >
+                    Mañana
+                  </button>
+                </div>
+              </div>
+
+              {/* Vista Previa del Formato Oficial */}
+              <div className="p-3.5 bg-indigo-50/70 rounded-xl border border-indigo-100 space-y-1">
+                <span className="text-[10px] uppercase font-bold text-indigo-600 tracking-wider block">
+                  Formato en el Documento y PDF:
+                </span>
+                <p className="text-xs font-black text-indigo-950 font-sans leading-tight">
+                  {formattedEmissionDate}
+                </p>
+              </div>
+
+              {/* Botón Aplicar y Cerrar */}
+              <button
+                type="button"
+                onClick={() => setIsEmissionDateModalOpen(false)}
+                className="w-full py-2.5 bg-slate-900 hover:bg-black text-white text-xs font-black rounded-xl shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <Check className="w-4 h-4 text-emerald-400" />
+                <span>Aplicar al Formato</span>
+              </button>
+
+            </div>
 
           </div>
         </div>
