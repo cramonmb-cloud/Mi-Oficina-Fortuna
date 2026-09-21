@@ -9,6 +9,7 @@ export interface ComplementedField {
   label: string;
   oldValue: string;
   newValue: string;
+  selected?: boolean;
 }
 
 export interface ImportMatchItem {
@@ -202,6 +203,30 @@ export const Personnel: React.FC<PersonnelProps> = ({
     return phone.replace(/\D/g, '').slice(-10);
   };
 
+  const isPhoneLike = (val?: string): boolean => {
+    if (!val) return false;
+    const clean = val.trim();
+    const digits = clean.replace(/\D/g, '');
+    const letters = clean.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ]/g, '');
+    return digits.length >= 7 && digits.length <= 13 && letters.length <= 2;
+  };
+
+  const isPlazaLike = (val?: string): boolean => {
+    if (!val) return false;
+    const clean = val.trim().toUpperCase();
+    if (/^RUTA\s*\d+/i.test(clean)) return true;
+    if (plazas.some(p => p.name.toUpperCase() === clean)) return true;
+    const letters = clean.replace(/[^A-ZÁÉÍÓÚÑ]/g, '');
+    const digits = clean.replace(/\D/g, '');
+    return letters.length >= 3 && digits.length < 5;
+  };
+
+  const isCurpLike = (val?: string): boolean => {
+    if (!val) return false;
+    const clean = val.trim().toUpperCase();
+    return /^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/.test(clean) || (clean.length >= 16 && /^[A-Z]{4}\d{6}/.test(clean));
+  };
+
   const findMatchingEmployee = (parsed: Partial<Employee>, existingEmployees: Employee[]): { match: Employee | null; reason: string } => {
     // 1. CURP Match (at least 10 chars)
     const parsedCurp = normalizeCleanStr(parsed.curp);
@@ -213,9 +238,9 @@ export const Personnel: React.FC<PersonnelProps> = ({
       if (byCurp) return { match: byCurp, reason: `CURP coincidente (${byCurp.curp})` };
     }
 
-    // 2. Phone Match (10 digits)
+    // 2. Phone Match (10 digits) - Ignore dummy/placeholder phones like 0000000000
     const parsedPhone = normalizeCleanPhone(parsed.email || parsed.phone);
-    if (parsedPhone.length === 10) {
+    if (parsedPhone.length === 10 && !/^(0{10}|1{10}|1234567890)$/.test(parsedPhone)) {
       const byPhone = existingEmployees.find(e => {
         const ePhone = normalizeCleanPhone(e.phone || e.email);
         return ePhone.length === 10 && ePhone === parsedPhone;
@@ -280,19 +305,46 @@ export const Personnel: React.FC<PersonnelProps> = ({
 
       // If the imported record has data for this field
       if (newVal) {
+        // --- STRICT SANITY & TYPE SAFETY GUARDS ---
+        // 1. Plaza: NEVER allow a phone number or pure numeric code to replace or populate plaza!
+        if (key === 'plaza') {
+          if (isPhoneLike(newVal) || newVal.replace(/\D/g, '').length >= 7) return;
+          if (newVal.length < 2) return;
+        }
+
+        // 2. Phone / Email / Contact: Must have at least 7 digits, cannot be text like "RUTA 1"
+        if (key === 'phone' || key === 'email' || key === 'guarantorPhone') {
+          const cleanDigits = newVal.replace(/\D/g, '');
+          if (cleanDigits.length < 7) return;
+          const cleanOld = oldVal.replace(/\D/g, '').slice(-10);
+          const cleanNew = cleanDigits.slice(-10);
+          if (cleanOld && cleanOld === cleanNew) return;
+        }
+
+        // 3. CURP: Never downgrade a valid 18-char CURP with an invalid fragment or number
+        if (key === 'curp') {
+          if (!isCurpLike(newVal) && newVal.length < 15) return;
+          if (existing.curp && isCurpLike(existing.curp) && !isCurpLike(newVal)) return;
+        }
+
+        // 4. Dates: Must be valid date strings
+        if (key === 'birthDate' || key === 'hireDate') {
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(newVal) && isNaN(Date.parse(newVal))) return;
+        }
+
+        // 5. Position: Cannot be phone numbers or pure numbers
+        if (key === 'position') {
+          if (isPhoneLike(newVal) || newVal.replace(/\D/g, '').length >= 7) return;
+        }
+
         // If existing is missing or different
         if (!oldVal || oldVal.toLowerCase() !== newVal.toLowerCase()) {
-          // Special case: ignore formatting differences in phone numbers if digits are identical
-          if (key === 'phone' || key === 'email' || key === 'guarantorPhone') {
-            const cleanOld = oldVal.replace(/\D/g, '').slice(-10);
-            const cleanNew = newVal.replace(/\D/g, '').slice(-10);
-            if (cleanOld && cleanOld === cleanNew) return;
-          }
           complements.push({
             field: key as any,
             label,
             oldValue: oldVal || '(Vacío)',
-            newValue: newVal
+            newValue: newVal,
+            selected: true
           });
         }
       }
@@ -870,13 +922,40 @@ export const Personnel: React.FC<PersonnelProps> = ({
         const normalizeCol = (str: string) => 
           str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
 
-        const headerRow: string[] = ((data[0] as any[]) || []).map(c => String(c || '').trim());
+        // 1. Detect true header row (scan first 6 rows for maximum recognized columns)
+        let headerRowIndex = 0;
+        let maxMatches = 0;
+        for (let r = 0; r < Math.min(data.length, 6); r++) {
+          const rowArr = ((data[r] as any[]) || []).map(c => String(c || '').trim());
+          let count = 0;
+          rowArr.forEach(cell => {
+            const n = normalizeCol(cell);
+            if (!n) return;
+            if (
+              n.includes('nombre') || n.includes('colaborador') || n.includes('empleado') ||
+              n.includes('apellido') || n.includes('celular') || n.includes('telefono') ||
+              n.includes('puesto') || n.includes('plaza') || n.includes('curp') ||
+              n.includes('ingreso') || n.includes('nacimiento') || n.includes('aval') ||
+              n.includes('sucursal') || n.includes('ruta')
+            ) {
+              count++;
+            }
+          });
+          if (count > maxMatches) {
+            maxMatches = count;
+            headerRowIndex = r;
+          }
+        }
+
+        const headerRow: string[] = ((data[headerRowIndex] as any[]) || []).map(c => String(c || '').trim());
         const colMap: Record<string, number> = {};
 
         headerRow.forEach((colName, idx) => {
           const norm = normalizeCol(colName);
-          if (norm.includes('aval')) {
-            if (norm.includes('telefono') || norm.includes('celular') || norm.includes('whatsapp') || norm.includes('tel') || norm.includes('movil')) {
+          if (!norm) return;
+
+          if (norm.includes('aval') || norm.includes('garante') || norm.includes('referencia')) {
+            if (norm.includes('telefono') || norm.includes('celular') || norm.includes('whatsapp') || norm.includes('tel') || norm.includes('movil') || norm.includes('contacto')) {
               if (colMap['guarantorPhone'] === undefined) colMap['guarantorPhone'] = idx;
             } else if (norm.includes('domicilio') || norm.includes('direccion') || norm.includes('calle') || norm.includes('ubicacion')) {
               if (colMap['guarantorAddress'] === undefined) colMap['guarantorAddress'] = idx;
@@ -889,19 +968,19 @@ export const Personnel: React.FC<PersonnelProps> = ({
             if (colMap['fullName'] === undefined) colMap['fullName'] = idx;
           } else if (norm.includes('nombre') || norm.includes('firstname')) {
             if (colMap['firstName'] === undefined) colMap['firstName'] = idx;
-          } else if (norm.includes('celular') || norm.includes('whatsapp') || norm.includes('telefono') || norm.includes('movil') || norm.includes('tel')) {
+          } else if (norm.includes('celular') || norm.includes('whatsapp') || norm.includes('telefono') || norm.includes('movil') || norm.includes('contacto') || norm.includes('phone') || norm === 'tel') {
             if (colMap['email'] === undefined) colMap['email'] = idx;
           } else if (norm.includes('pin') || norm.includes('acceso') || norm.includes('clave') || norm.includes('pass') || norm.includes('codigo')) {
             if (colMap['accessCode'] === undefined) colMap['accessCode'] = idx;
           } else if (norm.includes('puesto') || norm.includes('cargo') || norm.includes('position') || norm.includes('rol') || norm.includes('funcion') || norm.includes('ocupacion')) {
             if (colMap['position'] === undefined) colMap['position'] = idx;
-          } else if (norm.includes('plaza') || norm.includes('sucursal') || norm.includes('sede') || norm.includes('ciudad') || norm.includes('zona')) {
+          } else if ((norm.includes('plaza') || norm.includes('sucursal') || norm.includes('sede') || norm.includes('ciudad') || norm.includes('zona') || norm.includes('ruta') || norm.includes('oficina') || norm.includes('adscripcion')) && !norm.includes('telefono') && !norm.includes('celular') && !norm.includes('tel') && !norm.includes('aval')) {
             if (colMap['plaza'] === undefined) colMap['plaza'] = idx;
           } else if (norm.includes('categoria') || norm.includes('departamento') || norm.includes('depto') || norm.includes('area')) {
             if (colMap['category'] === undefined) colMap['category'] = idx;
           } else if ((norm.includes('estado') || norm.includes('estatus') || norm.includes('status') || norm.includes('activo')) && !norm.includes('civil')) {
             if (colMap['status'] === undefined) colMap['status'] = idx;
-          } else if (norm.includes('ingreso') || norm.includes('contratacion') || norm.includes('alta') || norm.includes('fechainicio')) {
+          } else if (norm.includes('ingreso') || norm.includes('contratacion') || norm.includes('alta') || norm.includes('fechainicio') || norm.includes('fechaingreso') || norm.includes('antiguedad')) {
             if (colMap['hireDate'] === undefined) colMap['hireDate'] = idx;
           } else if (norm.includes('nacimiento') || norm.includes('cumple') || norm.includes('fechanac')) {
             if (colMap['birthDate'] === undefined) colMap['birthDate'] = idx;
@@ -922,19 +1001,21 @@ export const Personnel: React.FC<PersonnelProps> = ({
           }
         });
 
-        const hasHeaderMapping = colMap['firstName'] !== undefined || colMap['fullName'] !== undefined;
+        const hasHeaderMapping = maxMatches >= 2 || colMap['firstName'] !== undefined || colMap['fullName'] !== undefined || colMap['email'] !== undefined;
 
         const getCol = (row: any[], field: string, fallbackIdx: number) => {
-          if (hasHeaderMapping && colMap[field] !== undefined) {
-            return row[colMap[field]];
+          if (hasHeaderMapping) {
+            // When headers exist, NEVER fall back to unrelated column indices!
+            return colMap[field] !== undefined ? row[colMap[field]] : undefined;
           }
+          // Only if no headers were detected at all, use standard fallback positional index
           return row[fallbackIdx];
         };
 
         const parsedEmployees: Partial<Employee>[] = [];
 
-        // Process rows (skip header)
-        for (let i = 1; i < data.length; i++) {
+        // Process rows (skip detected header row)
+        for (let i = headerRowIndex + 1; i < data.length; i++) {
           const row: any = data[i];
           if (!row || (!row[0] && !row[1] && !row[2])) continue;
 
@@ -961,16 +1042,56 @@ export const Personnel: React.FC<PersonnelProps> = ({
 
           if (!rawFirstName && !rawLastName) continue;
 
-          const rawPhoneOrEmail = String(getCol(row, 'email', 2) || '').replace(/\D/g, '').slice(0, 10);
+          let rawPhoneOrEmail = String(getCol(row, 'email', 2) || '').trim();
           const rawPin = String(getCol(row, 'accessCode', 3) || '').replace(/\D/g, '').slice(0, 4);
-          const rawPosition = String(getCol(row, 'position', 4) || '').trim();
-          const rawPlaza = String(getCol(row, 'plaza', 5) || '').trim();
+          let rawPosition = String(getCol(row, 'position', 4) || '').trim();
+          let rawPlaza = String(getCol(row, 'plaza', 5) || '').trim();
           const category = normalizeCategory(getCol(row, 'category', 6));
           const status = normalizeStatus(getCol(row, 'status', 7));
           const hireDate = formatExcelDate(getCol(row, 'hireDate', 8)) || getLocalDateString();
           const birthDate = formatExcelDate(getCol(row, 'birthDate', 9));
           const rawGender = getCol(row, 'gender', 10);
           let rawCurp = String(getCol(row, 'curp', 11) || '').trim().toUpperCase().slice(0, 18);
+
+          // --- SMART DATA DISAMBIGUATION (Never allow phone numbers in Plaza or viceversa) ---
+          // 1. If Plaza contains a phone number (e.g. "3171219219" or "+52 312 111 2233")
+          if (isPhoneLike(rawPlaza)) {
+            if (!rawPhoneOrEmail || !isPhoneLike(rawPhoneOrEmail)) {
+              rawPhoneOrEmail = rawPlaza;
+            }
+            rawPlaza = ''; // CLEAR PLAZA to prevent phone number corruption!
+          } else if (isCurpLike(rawPlaza)) {
+            if (!rawCurp) rawCurp = rawPlaza;
+            rawPlaza = '';
+          }
+
+          // 2. If Phone contains a Plaza name (e.g. "RUTA 1" or "MANZANILLO")
+          if (isPlazaLike(rawPhoneOrEmail) && !rawPlaza) {
+            rawPlaza = rawPhoneOrEmail;
+            rawPhoneOrEmail = '';
+          } else if (isCurpLike(rawPhoneOrEmail) && !rawCurp) {
+            rawCurp = rawPhoneOrEmail;
+            rawPhoneOrEmail = '';
+          }
+
+          // 3. If Position is a phone number
+          if (isPhoneLike(rawPosition)) {
+            if (!rawPhoneOrEmail) rawPhoneOrEmail = rawPosition;
+            rawPosition = '';
+          } else if (isPlazaLike(rawPosition) && !rawPlaza) {
+            rawPlaza = rawPosition;
+            rawPosition = '';
+          }
+
+          // 4. If CURP is a phone number
+          if (isPhoneLike(rawCurp)) {
+            if (!rawPhoneOrEmail) rawPhoneOrEmail = rawCurp;
+            rawCurp = '';
+          }
+
+          // Format clean 10-digit phone
+          const cleanPhone = rawPhoneOrEmail.replace(/\D/g, '').slice(-10);
+
           const gender = normalizeGender(rawGender, rawCurp);
 
           // Auto-calculate CURP if omitted but birthDate and names present
@@ -1006,8 +1127,8 @@ export const Personnel: React.FC<PersonnelProps> = ({
           parsedEmployees.push({
             firstName: rawFirstName,
             lastName: rawLastName,
-            email: rawPhoneOrEmail,
-            phone: rawPhoneOrEmail,
+            email: cleanPhone,
+            phone: cleanPhone,
             accessCode: rawPin,
             position: rawPosition || (category === 'Promotoras' ? 'Promotora' : category === 'Supervisoras' ? 'Supervisora' : 'Colaborador'),
             plaza: rawPlaza,
@@ -1055,7 +1176,9 @@ export const Personnel: React.FC<PersonnelProps> = ({
       for (const match of selectedMatches) {
         const updates: Partial<Employee> = {};
         match.fieldsToComplement.forEach(f => {
-          (updates as any)[f.field] = f.newValue;
+          if (f.selected !== false) {
+            (updates as any)[f.field] = f.newValue;
+          }
         });
         if (Object.keys(updates).length > 0) {
           await updateEmployee(match.existing.id, updates);
@@ -2088,26 +2211,70 @@ export const Personnel: React.FC<PersonnelProps> = ({
                                   {/* Campos a complementar */}
                                   <div className="mt-2">
                                     {item.fieldsToComplement.length > 0 ? (
-                                      <div className="bg-slate-50 rounded-lg p-2 border border-slate-200/70 space-y-1.5">
-                                        <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 flex items-center gap-1">
-                                          <Sparkles className="w-3 h-3 text-emerald-600" />
-                                          Campos a complementar ({item.fieldsToComplement.length}):
-                                        </p>
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                                          {item.fieldsToComplement.map((field, fIdx) => (
-                                            <div key={fIdx} className="text-[11px] bg-white p-1.5 rounded border border-slate-200 flex flex-col justify-between">
-                                              <span className="font-semibold text-slate-600 text-[10px]">{field.label}:</span>
-                                              <div className="flex items-center gap-1 mt-0.5">
-                                                <span className="text-slate-400 truncate max-w-[80px]" title={field.oldValue}>
-                                                  {field.oldValue}
-                                                </span>
-                                                <span className="text-slate-400">➔</span>
-                                                <span className="font-bold text-emerald-700 truncate" title={field.newValue}>
-                                                  {field.newValue}
-                                                </span>
-                                              </div>
-                                            </div>
-                                          ))}
+                                      <div className="bg-slate-50 rounded-lg p-2.5 border border-slate-200/70 space-y-2">
+                                        <div className="flex items-center justify-between">
+                                          <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 flex items-center gap-1">
+                                            <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                                            Campos a complementar ({item.fieldsToComplement.filter(f => f.selected !== false).length}/{item.fieldsToComplement.length}):
+                                          </p>
+                                          <span className="text-[10px] text-slate-400">Marca o desmarca campos individuales</span>
+                                        </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                          {item.fieldsToComplement.map((field, fIdx) => {
+                                            const isFieldSelected = field.selected !== false;
+                                            return (
+                                              <label 
+                                                key={fIdx} 
+                                                className={`text-[11px] p-2 rounded-lg border flex items-start gap-2 cursor-pointer transition-all ${
+                                                  isFieldSelected
+                                                    ? 'bg-white border-emerald-300 shadow-2xs'
+                                                    : 'bg-slate-100/70 border-slate-200 opacity-60'
+                                                }`}
+                                              >
+                                                <input
+                                                  type="checkbox"
+                                                  checked={isFieldSelected}
+                                                  disabled={!item.selected}
+                                                  onChange={() => {
+                                                    setImportMatches(prev => prev.map((m, mIdx) => {
+                                                      if (mIdx !== idx) return m;
+                                                      return {
+                                                        ...m,
+                                                        fieldsToComplement: m.fieldsToComplement.map((f, fieldIdx) => {
+                                                          if (fieldIdx !== fIdx) return f;
+                                                          return { ...f, selected: !isFieldSelected };
+                                                        })
+                                                      };
+                                                    }));
+                                                  }}
+                                                  className="mt-0.5 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                                                />
+                                                <div className="flex-1 min-w-0">
+                                                  <div className="flex items-center justify-between">
+                                                    <span className="font-bold text-slate-700 text-[10px] uppercase tracking-wider">{field.label}</span>
+                                                    {isFieldSelected ? (
+                                                      <span className="text-[9px] text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-100">
+                                                        Actualizar
+                                                      </span>
+                                                    ) : (
+                                                      <span className="text-[9px] text-slate-400 font-medium bg-slate-200/60 px-1.5 py-0.2 rounded">
+                                                        Omitir
+                                                      </span>
+                                                    )}
+                                                  </div>
+                                                  <div className="flex items-center gap-1.5 mt-1 text-[11px]">
+                                                    <span className="text-slate-400 truncate max-w-[85px]" title={field.oldValue || '(Vacío)'}>
+                                                      {field.oldValue || '(Vacío)'}
+                                                    </span>
+                                                    <span className="text-slate-400">➔</span>
+                                                    <span className="font-bold text-emerald-800 truncate" title={field.newValue}>
+                                                      {field.newValue}
+                                                    </span>
+                                                  </div>
+                                                </div>
+                                              </label>
+                                            );
+                                          })}
                                         </div>
                                       </div>
                                     ) : (
