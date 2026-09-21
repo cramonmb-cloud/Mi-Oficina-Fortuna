@@ -1214,7 +1214,7 @@ export const Personnel: React.FC<PersonnelProps> = ({
   };
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-[1700px] w-full mx-auto">
       
       {/* Executive Sub-section Switcher */}
       <div className="flex border-b border-slate-200 gap-6">
@@ -1587,29 +1587,29 @@ export const Personnel: React.FC<PersonnelProps> = ({
           ) : (
             <div className="bg-white rounded-xl border border-slate-200/80 shadow-xs overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
+                <table className="w-full text-left border-collapse min-w-[1000px]">
                   <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-[11px] uppercase text-slate-500 font-semibold tracking-wider">
-                      <th className="py-3 px-4">Colaborador</th>
-                      <th className="py-3 px-4">Puesto / Categoría</th>
-                      <th className="py-3 px-4">Plaza</th>
-                      <th className="py-3 px-4">
-                        {(activeCategory === 'Promotoras' || activeCategory === 'Supervisoras') ? 'Cumpleaños' : 'Contacto'}
+                    <tr className="bg-slate-50 border-b border-slate-200 text-[11px] uppercase text-slate-500 font-semibold tracking-wider sticky top-0 z-20">
+                      <th className="py-2.5 px-3 whitespace-nowrap min-w-[220px]">Colaborador</th>
+                      <th className="py-2.5 px-2.5 whitespace-nowrap w-40">Puesto / Categoría</th>
+                      <th className="py-2.5 px-2.5 whitespace-nowrap w-28">Plaza</th>
+                      <th className="py-2.5 px-2.5 whitespace-nowrap w-40">Contacto / Cumpleaños</th>
+                      <th className="py-2.5 px-2.5 whitespace-nowrap w-44">Vinculación</th>
+                      <th className="py-2.5 px-2.5 whitespace-nowrap w-28">Fecha Ingreso</th>
+                      <th className="py-2.5 px-2.5 whitespace-nowrap w-36">Fecha Término</th>
+                      <th className="py-2.5 px-3 text-center whitespace-nowrap w-32 sticky right-0 bg-slate-50 z-30 shadow-[-6px_0_10px_-4px_rgba(0,0,0,0.06)] border-l border-slate-200/60">
+                        Acciones
                       </th>
-                      <th className="py-3 px-4">Vinculación</th>
-                      <th className="py-3 px-4">Fecha Ingreso</th>
-                      <th className="py-3 px-4">Fecha Término</th>
-                      <th className="py-3 px-4 text-right">Acciones</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-xs">
                     {filteredEmployees.map(employee => (
                       <tr key={employee.id} className="hover:bg-slate-50/80 transition-colors group">
-                        <td className="py-3 px-4">
+                        <td className="py-2.5 px-3">
                           <div className="flex items-center">
                             <div 
                               onClick={() => setViewingEmployeeDetails(employee)}
-                              className="w-7 h-7 bg-slate-100 border border-slate-200 rounded-lg flex items-center justify-center text-[10px] font-bold text-slate-700 mr-2.5 shrink-0 cursor-pointer overflow-hidden hover:ring-2 hover:ring-indigo-500 transition-all"
+                              className="w-8 h-8 bg-slate-100 border border-slate-200 rounded-lg flex items-center justify-center text-[10px] font-bold text-slate-700 mr-2.5 shrink-0 cursor-pointer overflow-hidden hover:ring-2 hover:ring-indigo-500 transition-all shadow-2xs"
                               title="Ver perfil completo"
                             >
                               {employee.photoUrl ? (
@@ -1638,11 +1638,22 @@ export const Personnel: React.FC<PersonnelProps> = ({
                                   {employee.status || 'ACTIVO'}
                                 </span>
                               </div>
-                              {employee.groupName && <span className="text-[9px] bg-slate-100 text-slate-600 px-1 py-0.2 rounded font-mono">{employee.groupName}</span>}
+                              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                {employee.curp ? (
+                                  <span className="text-[10px] font-mono text-slate-400 truncate max-w-[145px]" title={`CURP: ${employee.curp}`}>
+                                    {employee.curp}
+                                  </span>
+                                ) : null}
+                                {employee.groupName && (
+                                  <span className="text-[9px] bg-slate-100 text-slate-600 px-1 py-0.2 rounded font-mono">
+                                    {employee.groupName}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </td>
-                        <td className="py-3 px-4">
+                        <td className="py-2.5 px-2.5 whitespace-nowrap">
                           <div className="flex flex-col">
                             <span className="font-medium text-slate-800">{employee.position || 'Sin Cargo'}</span>
                             <span className={`text-[9px] font-semibold px-1.5 py-0.2 rounded w-fit mt-0.5 ${getCategoryColor(employee.category || 'Oficina')}`}>
@@ -1650,60 +1661,55 @@ export const Personnel: React.FC<PersonnelProps> = ({
                             </span>
                           </div>
                         </td>
-                        <td className="py-3 px-4">
+                        <td className="py-2.5 px-2.5 whitespace-nowrap">
                           <span className="text-slate-600 flex items-center">
-                            <MapPin className="w-3 h-3 mr-1 text-slate-400" />
+                            <MapPin className="w-3 h-3 mr-1 text-slate-400 shrink-0" />
                             {employee.plaza || '-'}
                           </span>
                         </td>
-                        <td className="py-3 px-4">
-                          {(activeCategory === 'Promotoras' || activeCategory === 'Supervisoras') ? (
-                            <div className="flex items-center text-slate-600 font-mono">
-                              <Cake className="w-3 h-3 mr-1.5 text-slate-400" />
-                              {employee.birthDate ? (
-                                <span>{employee.birthDate.split('-').reverse().join('/')}</span>
-                              ) : (
-                                <span className="text-slate-400 text-xs">-</span>
-                              )}
-                            </div>
-                          ) : (
-                            <div className="flex flex-col text-[11px] text-slate-500 space-y-0.5 font-mono">
-                              {employee.email && (
-                                <span className="flex items-center text-slate-700 font-medium" title="Celular / WhatsApp">
-                                  <MessageSquare className="w-3 h-3 mr-1 text-emerald-600" /> {employee.email}
-                                </span>
-                              )}
-                              {employee.phone && (
-                                <span className="flex items-center text-slate-400">
-                                  <Phone className="w-3 h-3 mr-1" /> {employee.phone}
-                                </span>
-                              )}
-                            </div>
-                          )}
+                        <td className="py-2.5 px-2.5 whitespace-nowrap">
+                          <div className="flex flex-col text-[11px] space-y-0.5 font-mono">
+                            {employee.email ? (
+                              <span className="flex items-center text-slate-700 font-medium" title="Celular / WhatsApp">
+                                <MessageSquare className="w-3 h-3 mr-1 text-emerald-600 shrink-0" /> {employee.email}
+                              </span>
+                            ) : employee.phone ? (
+                              <span className="flex items-center text-slate-500" title="Teléfono">
+                                <Phone className="w-3 h-3 mr-1 text-slate-400 shrink-0" /> {employee.phone}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 italic text-[11px]">Sin contacto</span>
+                            )}
+                            {employee.birthDate ? (
+                              <span className="flex items-center text-slate-500 text-[10px]" title="Cumpleaños">
+                                <Cake className="w-3 h-3 mr-1 text-rose-400 shrink-0" /> {employee.birthDate.split('-').reverse().join('/')}
+                              </span>
+                            ) : null}
+                          </div>
                         </td>
-                        <td className="py-3 px-4 text-[11px]">
+                        <td className="py-2.5 px-2.5 text-[11px] whitespace-nowrap">
                           <div className="space-y-0.5">
                             {employee.linkedExecutiveId && (
                               <div className="text-slate-700 flex items-center" title="Ejecutivo Vinculado">
-                                <LinkIcon className="w-3 h-3 mr-1 text-slate-400" /> {getLinkedName(employee.linkedExecutiveId)}
+                                <LinkIcon className="w-3 h-3 mr-1 text-slate-400 shrink-0" /> {getLinkedName(employee.linkedExecutiveId)}
                               </div>
                             )}
                             {employee.linkedSupervisorId && (
                               <div className="text-slate-700 flex items-center" title="Supervisora Vinculada">
-                                <Users className="w-3 h-3 mr-1 text-slate-400" /> {getLinkedName(employee.linkedSupervisorId)}
+                                <Users className="w-3 h-3 mr-1 text-slate-400 shrink-0" /> {getLinkedName(employee.linkedSupervisorId)}
                               </div>
                             )}
                             {employee.supervisionName && (
                               <div className="text-slate-700 flex items-center" title="Nombre Supervisión">
-                                <Users className="w-3 h-3 mr-1 text-slate-400" /> {employee.supervisionName}
+                                <Users className="w-3 h-3 mr-1 text-slate-400 shrink-0" /> {employee.supervisionName}
                               </div>
                             )}
                           </div>
                         </td>
-                        <td className="py-3 px-4 text-slate-500 font-mono">
+                        <td className="py-2.5 px-2.5 text-slate-600 font-mono whitespace-nowrap">
                           {employee.hireDate || '-'}
                         </td>
-                        <td className="py-3 px-4">
+                        <td className="py-2.5 px-2.5 whitespace-nowrap">
                           {employee.contractEndDate ? (
                             <div className="flex flex-col">
                               <span className="font-mono font-bold text-slate-900 text-xs">
@@ -1743,32 +1749,32 @@ export const Personnel: React.FC<PersonnelProps> = ({
                             <span className="text-slate-400 text-[11px] italic">Sin Contrato</span>
                           )}
                         </td>
-                        <td className="py-3 px-4 text-right">
-                          <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <td className="py-2.5 px-3 text-right sticky right-0 bg-white group-hover:bg-slate-50/95 transition-colors z-10 shadow-[-6px_0_10px_-4px_rgba(0,0,0,0.06)] border-l border-slate-100">
+                          <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
                             <button 
                               onClick={(e) => handleDirectDownloadQr(employee, e)} 
-                              className="text-slate-500 hover:text-slate-900 p-1 hover:bg-slate-100 rounded-md transition-colors"
+                              className="p-1.5 text-slate-500 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 transition-colors shadow-2xs cursor-pointer"
                               title={`Descargar Código QR (${employee.firstName.toUpperCase()} ${employee.lastName.toUpperCase()}.jpg)`}
                             >
                               <QrCode className="w-3.5 h-3.5 text-slate-600" />
                             </button>
                             <button 
                               onClick={() => setSelectedCredentialEmployee(employee)} 
-                              className="text-slate-500 hover:text-slate-900 p-1 hover:bg-slate-100 rounded-md transition-colors"
+                              className="p-1.5 text-slate-500 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 transition-colors shadow-2xs cursor-pointer"
                               title="Ver Credencial Virtual"
                             >
                               <CreditCard className="w-3.5 h-3.5" />
                             </button>
                             <button 
                               onClick={() => handleOpenModal(employee)} 
-                              className="text-slate-400 hover:text-slate-900 p-1 hover:bg-slate-100 rounded-md transition-colors"
+                              className="p-1.5 text-slate-500 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 transition-colors shadow-2xs cursor-pointer"
                               title="Editar"
                             >
                               <Pencil className="w-3.5 h-3.5" />
                             </button>
                             <button 
                               onClick={() => handleDelete(employee.id)} 
-                              className="text-slate-400 hover:text-rose-600 p-1 hover:bg-rose-50 rounded-md transition-colors"
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg border border-slate-200 hover:border-rose-200 transition-colors shadow-2xs cursor-pointer"
                               title="Eliminar"
                             >
                               <Trash2 className="w-3.5 h-3.5" />

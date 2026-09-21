@@ -194,6 +194,7 @@ export interface AppSettings {
   imgbbApiKey?: string;
   appVersion?: string;
   appStatusColor?: string;
+  menuOrder?: string[];
   mobileNavSections?: string[];
   birthdayPrompt?: string;
   birthdayVideoPrompt?: string;

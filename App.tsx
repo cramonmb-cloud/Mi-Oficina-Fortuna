@@ -9,6 +9,8 @@ import {
   Image as ImageIcon, // Icon changed for Mascota
   Menu,
   X,
+  PanelLeftClose,
+  PanelLeftOpen,
   Bell,
   LogOut,
   Settings,
@@ -138,6 +140,26 @@ function App() {
     }
   };
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('mi_oficina_sidebar_collapsed');
+      return saved !== null ? JSON.parse(saved) : false;
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleSidebarCollapse = () => {
+    setSidebarCollapsed(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('mi_oficina_sidebar_collapsed', JSON.stringify(next));
+      } catch (e) {
+        console.error("Error saving sidebar collapsed state", e);
+      }
+      return next;
+    });
+  };
   const [loading, setLoading] = useState(false);
   
   // Connection Status State
@@ -177,8 +199,37 @@ function App() {
   const [imprentaUrl, setImprentaUrl] = useState('');
   const [multiOfficeEnabled, setMultiOfficeEnabled] = useState(false);
   
+  const defaultMenuOrder = useMemo(() => [
+    'tablero', 'personal', 'autos', 'gastos', 'tareas', 
+    'pagares', 'formatos', 'fallos', 'mascota', 'imprenta', 'ajustes'
+  ], []);
+
+  const [menuOrder, setMenuOrder] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('mi_oficina_menu_order');
+      return saved ? JSON.parse(saved) : [
+        'tablero', 'personal', 'autos', 'gastos', 'tareas', 
+        'pagares', 'formatos', 'fallos', 'mascota', 'imprenta', 'ajustes'
+      ];
+    } catch {
+      return [
+        'tablero', 'personal', 'autos', 'gastos', 'tareas', 
+        'pagares', 'formatos', 'fallos', 'mascota', 'imprenta', 'ajustes'
+      ];
+    }
+  });
+
+  const [mobileNavSections, setMobileNavSections] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('mi_oficina_mobile_nav');
+      return saved ? JSON.parse(saved) : ['tablero', 'personal', 'gastos', 'tareas'];
+    } catch {
+      return ['tablero', 'personal', 'gastos', 'tareas'];
+    }
+  });
+
   const navItems = useMemo(() => {
-    const items = [
+    const rawItems = [
       { id: 'tablero', label: 'Panel', icon: LayoutDashboard },
       { id: 'personal', label: 'Personal', icon: Users },
       { id: 'autos', label: 'Auto', icon: Car },
@@ -191,16 +242,48 @@ function App() {
       { id: 'imprenta', label: 'Imprenta', icon: Printer },
       { id: 'ajustes', label: 'Ajustes', icon: Settings },
     ];
+
     if (currentUser?.isOfficeUser) {
-      return items.filter(item => item.id === 'gastos');
+      return rawItems.filter(item => item.id === 'gastos');
     }
-    return items;
-  }, [mascotaName, currentUser?.isOfficeUser]);
+
+    if (!menuOrder || menuOrder.length === 0) {
+      return rawItems;
+    }
+
+    const itemMap = new Map(rawItems.map(item => [item.id, item]));
+    const ordered: typeof rawItems = [];
+
+    for (const id of menuOrder) {
+      const item = itemMap.get(id);
+      if (item) {
+        ordered.push(item);
+        itemMap.delete(id);
+      }
+    }
+
+    for (const item of itemMap.values()) {
+      ordered.push(item);
+    }
+
+    return ordered;
+  }, [mascotaName, currentUser?.isOfficeUser, menuOrder]);
+
+  const mobileDockItems = useMemo(() => {
+    const list = mobileNavSections
+      .map(id => navItems.find(item => item.id === id))
+      .filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+    if (list.length === 0) {
+      return navItems.filter(i => i.id !== 'ajustes').slice(0, 4);
+    }
+    return list.slice(0, 4);
+  }, [mobileNavSections, navItems]);
+
   const [googleApiKey, setGoogleApiKey] = useState('');
   const [imgbbApiKey, setImgbbApiKey] = useState('');
   const [appVersion, setAppVersion] = useState('1.0.0');
   const [appStatusColor, setAppStatusColor] = useState('#10B981'); 
-  const [mobileNavSections, setMobileNavSections] = useState<string[]>(['tablero', 'personal', 'autos', 'gastos', 'tareas', 'fallos', 'imprenta']);
   const [birthdayPrompt, setBirthdayPrompt] = useState<string>('');
   const [birthdayVideoPrompt, setBirthdayVideoPrompt] = useState<string>('');
   const [birthdayWhatsAppTemplate, setBirthdayWhatsAppTemplate] = useState<string>('');
@@ -472,6 +555,12 @@ function App() {
       }
       setAppVersion(settings.appVersion);
       setAppStatusColor(settings.appStatusColor);
+      if (settings.menuOrder && Array.isArray(settings.menuOrder) && settings.menuOrder.length > 0) {
+        setMenuOrder(settings.menuOrder);
+        try {
+          localStorage.setItem('mi_oficina_menu_order', JSON.stringify(settings.menuOrder));
+        } catch {}
+      }
       if (settings.mobileNavSections) {
         // Migrate old IDs if necessary
         const idMap: Record<string, string> = {
@@ -483,6 +572,9 @@ function App() {
         };
         const migrated = settings.mobileNavSections.map((id: string) => idMap[id] || id);
         setMobileNavSections(migrated);
+        try {
+          localStorage.setItem('mi_oficina_mobile_nav', JSON.stringify(migrated));
+        } catch {}
       }
       if (settings.birthdayPrompt) {
         setBirthdayPrompt(settings.birthdayPrompt);
@@ -771,6 +863,7 @@ function App() {
             imgbbApiKey={imgbbApiKey}
             appVersion={appVersion}
             appStatusColor={appStatusColor}
+            menuOrder={menuOrder}
             mobileNavSections={mobileNavSections}
             birthdayPrompt={birthdayPrompt}
             birthdayVideoPrompt={birthdayVideoPrompt}
@@ -802,39 +895,67 @@ function App() {
 
       {/* Enterprise Sidebar */}
       <aside className={`
-        fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-slate-200 flex flex-col justify-between
-        transform transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0
+        fixed inset-y-0 left-0 z-50 bg-white border-r border-slate-200 flex flex-col justify-between
+        transform transition-all duration-300 ease-in-out lg:relative lg:translate-x-0
         ${sidebarOpen ? 'translate-x-0 shadow-2xl lg:shadow-none' : '-translate-x-full'}
+        ${sidebarCollapsed ? 'lg:w-20 w-64' : 'w-64'}
       `}>
         {/* Brand Header */}
         <div>
-          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-9 h-9 rounded-xl bg-slate-900 flex items-center justify-center text-white shadow-sm shrink-0 font-bold text-sm">
+          <div className={`flex items-center border-b border-slate-100 transition-all ${
+            sidebarCollapsed 
+              ? 'py-3.5 px-2 flex-col gap-2 items-center justify-center' 
+              : 'py-4 px-4 justify-between'
+          }`}>
+            <div className={`flex items-center gap-3 min-w-0 ${sidebarCollapsed ? 'justify-center' : ''}`}>
+              <div 
+                onClick={sidebarCollapsed ? toggleSidebarCollapse : undefined}
+                className={`w-9 h-9 rounded-xl bg-slate-900 flex items-center justify-center text-white shadow-sm shrink-0 font-bold text-sm select-none ${
+                  sidebarCollapsed ? 'cursor-pointer hover:scale-105 active:scale-95 transition-transform' : ''
+                }`}
+                title={sidebarCollapsed ? `${companyName || 'Mi Oficina'} (clic para desplegar)` : undefined}
+              >
                 {companyName ? companyName.charAt(0).toUpperCase() : 'O'}
               </div>
-              <div className="min-w-0">
-                <h1 className="text-sm font-bold text-slate-900 tracking-tight leading-none truncate">
-                  Mi Oficina
-                </h1>
-                <p className="text-xs text-slate-500 font-medium truncate mt-0.5">
-                  {companyName || 'Empresarial'}
-                </p>
-              </div>
+              {!sidebarCollapsed && (
+                <div className="min-w-0">
+                  <h1 className="text-sm font-bold text-slate-900 tracking-tight leading-none truncate">
+                    Mi Oficina
+                  </h1>
+                  <p className="text-xs text-slate-500 font-medium truncate mt-0.5">
+                    {companyName || 'Empresarial'}
+                  </p>
+                </div>
+              )}
             </div>
-            <button 
-              onClick={() => setSidebarOpen(false)} 
-              className="lg:hidden p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
+
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={toggleSidebarCollapse}
+                className="hidden lg:flex p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                title={sidebarCollapsed ? "Desplegar menú lateral" : "Plegar menú lateral"}
+              >
+                {sidebarCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+              </button>
+              <button 
+                onClick={() => setSidebarOpen(false)} 
+                className="lg:hidden p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </div>
           
           {/* Navigation Links */}
-          <nav className="p-3 space-y-1 overflow-y-auto max-h-[calc(100vh-140px)]">
-            <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-              Módulos Principales
-            </div>
+          <nav className={`space-y-1 overflow-y-auto max-h-[calc(100vh-140px)] transition-all ${sidebarCollapsed ? 'p-2' : 'p-3'}`}>
+            {!sidebarCollapsed ? (
+              <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                Módulos Principales
+              </div>
+            ) : (
+              <div className="h-px bg-slate-100 my-1 mx-2" />
+            )}
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
@@ -845,14 +966,21 @@ function App() {
                     handleTabChange(item.id);
                     setSidebarOpen(false);
                   }}
-                  className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm font-medium transition-all group ${
+                  title={sidebarCollapsed ? item.label : undefined}
+                  className={`flex items-center w-full rounded-lg text-sm font-medium transition-all group cursor-pointer ${
+                    sidebarCollapsed 
+                      ? 'justify-center p-2.5' 
+                      : 'px-3 py-2.5'
+                  } ${
                     isActive 
                       ? 'bg-slate-900 text-white shadow-sm' 
                       : 'text-slate-600 hover:bg-slate-100/80 hover:text-slate-900'
                   }`}
                 >
-                  <Icon className={`w-4 h-4 mr-3 transition-colors ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-600'}`} />
-                  <span className="truncate">{item.label}</span>
+                  <Icon className={`w-4 h-4 transition-colors shrink-0 ${
+                    sidebarCollapsed ? '' : 'mr-3'
+                  } ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-600'}`} />
+                  {!sidebarCollapsed && <span className="truncate">{item.label}</span>}
                 </button>
               );
             })}
@@ -860,17 +988,19 @@ function App() {
         </div>
 
         {/* User Profile Footer */}
-        <div className="p-3 border-t border-slate-200 bg-slate-50/50" ref={userMenuRef}>
+        <div className={`border-t border-slate-200 bg-slate-50/50 transition-all relative ${sidebarCollapsed ? 'p-2 flex justify-center' : 'p-3'}`} ref={userMenuRef}>
           {userMenuOpen && (
-             <div className="absolute bottom-20 left-3 right-3 bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden animate-fade-in z-50 py-1">
+             <div className={`absolute bottom-20 bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden animate-fade-in z-50 py-1 ${
+               sidebarCollapsed ? 'left-2 w-56' : 'left-3 right-3'
+             }`}>
                 {/* Install App Button */}
                 {deferredPrompt && (
                   <>
                     <button 
                       onClick={handleInstallApp}
-                      className="w-full text-left px-4 py-2.5 text-xs text-indigo-600 hover:bg-indigo-50 flex items-center transition-colors font-semibold"
+                      className="w-full text-left px-4 py-2.5 text-xs text-indigo-600 hover:bg-indigo-50 flex items-center transition-colors font-semibold cursor-pointer"
                     >
-                      <Smartphone className="w-4 h-4 mr-2" /> Instalar Aplicación
+                      <Smartphone className="w-4 h-4 mr-2 shrink-0" /> Instalar Aplicación
                     </button>
                     <div className="h-px bg-slate-100 my-1"></div>
                   </>
@@ -880,34 +1010,41 @@ function App() {
                   <>
                     <button 
                       onClick={handleOpenSettings}
-                      className="w-full text-left px-4 py-2.5 text-xs text-slate-700 hover:bg-slate-100 flex items-center transition-colors font-medium"
+                      className="w-full text-left px-4 py-2.5 text-xs text-slate-700 hover:bg-slate-100 flex items-center transition-colors font-medium cursor-pointer"
                     >
-                       <Settings className="w-4 h-4 mr-2 text-slate-400" /> Configuración General
+                       <Settings className="w-4 h-4 mr-2 text-slate-400 shrink-0" /> Configuración General
                     </button>
                     <div className="h-px bg-slate-100 my-1"></div>
                   </>
                 )}
                 <button 
                   onClick={handleLogout}
-                  className="w-full text-left px-4 py-2.5 text-xs text-rose-600 hover:bg-rose-50 flex items-center transition-colors font-medium"
+                  className="w-full text-left px-4 py-2.5 text-xs text-rose-600 hover:bg-rose-50 flex items-center transition-colors font-medium cursor-pointer"
                 >
-                   <LogOut className="w-4 h-4 mr-2" /> Cerrar Sesión
+                   <LogOut className="w-4 h-4 mr-2 shrink-0" /> Cerrar Sesión
                 </button>
              </div>
           )}
 
           <button 
             onClick={() => setUserMenuOpen(!userMenuOpen)}
-            className="flex items-center w-full p-2 rounded-lg bg-white border border-slate-200/80 hover:border-slate-300 hover:bg-slate-50 transition-all text-left shadow-xs"
+            title={sidebarCollapsed ? `${currentUser.firstName} ${currentUser.lastName}` : undefined}
+            className={`flex items-center rounded-lg bg-white border border-slate-200/80 hover:border-slate-300 hover:bg-slate-50 transition-all text-left shadow-xs cursor-pointer ${
+              sidebarCollapsed ? 'p-2 justify-center w-full' : 'w-full p-2'
+            }`}
           >
             <div className="w-8 h-8 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-700 font-semibold text-xs shrink-0">
               {currentUser.firstName.charAt(0)}{currentUser.lastName.charAt(0)}
             </div>
-            <div className="ml-2.5 overflow-hidden flex-1 min-w-0">
-              <p className="text-xs font-semibold text-slate-900 truncate leading-tight">{currentUser.firstName} {currentUser.lastName}</p>
-              <p className="text-[11px] text-slate-500 truncate leading-tight mt-0.5">{currentUser.position || 'Colaborador'}</p>
-            </div>
-            <ChevronUp className={`w-3.5 h-3.5 text-slate-400 transition-transform ${userMenuOpen ? 'rotate-180' : ''}`} />
+            {!sidebarCollapsed && (
+              <>
+                <div className="ml-2.5 overflow-hidden flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-slate-900 truncate leading-tight">{currentUser.firstName} {currentUser.lastName}</p>
+                  <p className="text-[11px] text-slate-500 truncate leading-tight mt-0.5">{currentUser.position || 'Colaborador'}</p>
+                </div>
+                <ChevronUp className={`w-3.5 h-3.5 text-slate-400 transition-transform shrink-0 ${userMenuOpen ? 'rotate-180' : ''}`} />
+              </>
+            )}
           </button>
         </div>
       </aside>
@@ -924,6 +1061,16 @@ function App() {
               title="Abrir Menú de Módulos"
             >
               <Menu className="w-5 h-5" />
+            </button>
+
+            {/* Desktop Toggle Button in Header */}
+            <button
+              type="button"
+              onClick={toggleSidebarCollapse}
+              className="hidden lg:flex p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer mr-1"
+              title={sidebarCollapsed ? "Desplegar menú lateral" : "Plegar menú lateral"}
+            >
+              {sidebarCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
             </button>
 
             {/* Breadcrumb Navigation */}
@@ -971,93 +1118,32 @@ function App() {
           <div className="lg:hidden fixed bottom-3 inset-x-3 sm:bottom-4 sm:inset-x-6 z-40 pointer-events-none flex justify-center">
             <nav className="pointer-events-auto w-full max-w-lg bg-white/80 dark:bg-slate-900/85 backdrop-blur-2xl backdrop-saturate-150 border border-white/60 dark:border-white/15 rounded-3xl p-1.5 shadow-[0_16px_45px_rgba(0,0,0,0.18),0_2px_8px_rgba(0,0,0,0.06),inset_0_1px_1px_rgba(255,255,255,0.95)] flex items-center justify-around">
               
-              {/* Acceso 1: Panel */}
-              {(() => {
-                const isActive = activeTab === 'tablero';
+              {/* Dynamic Quick Access Tabs based on mobileDockItems */}
+              {mobileDockItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = activeTab === item.id;
                 return (
                   <button
-                    onClick={() => handleTabChange('tablero')}
+                    key={item.id}
+                    onClick={() => handleTabChange(item.id)}
                     className={`relative flex-1 flex flex-col items-center justify-center py-1.5 px-2 h-[58px] rounded-2xl transition-all duration-200 cursor-pointer select-none active:scale-90 ${
                       isActive 
                         ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/25 font-bold scale-[1.03]' 
                         : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100/60 font-semibold'
                     }`}
                   >
-                    <LayoutDashboard className={`w-5 h-5 transition-transform duration-200 ${isActive ? 'scale-110 text-emerald-400' : 'text-slate-500'}`} />
+                    <Icon className={`w-5 h-5 transition-transform duration-200 ${isActive ? 'scale-110 text-emerald-400' : 'text-slate-500'}`} />
                     <span className={`text-[10px] tracking-tight mt-1 truncate ${isActive ? 'text-white font-black' : 'text-slate-500 font-bold'}`}>
-                      Panel
+                      {item.label.split(' ')[0]}
                     </span>
                     {isActive && <span className="w-3 h-0.5 rounded-full bg-emerald-400 mt-0.5" />}
                   </button>
                 );
-              })()}
-
-              {/* Acceso 2: Personal */}
-              {(() => {
-                const isActive = activeTab === 'personal';
-                return (
-                  <button
-                    onClick={() => handleTabChange('personal')}
-                    className={`relative flex-1 flex flex-col items-center justify-center py-1.5 px-2 h-[58px] rounded-2xl transition-all duration-200 cursor-pointer select-none active:scale-90 ${
-                      isActive 
-                        ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/25 font-bold scale-[1.03]' 
-                        : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100/60 font-semibold'
-                    }`}
-                  >
-                    <Users className={`w-5 h-5 transition-transform duration-200 ${isActive ? 'scale-110 text-emerald-400' : 'text-slate-500'}`} />
-                    <span className={`text-[10px] tracking-tight mt-1 truncate ${isActive ? 'text-white font-black' : 'text-slate-500 font-bold'}`}>
-                      Personal
-                    </span>
-                    {isActive && <span className="w-3 h-0.5 rounded-full bg-emerald-400 mt-0.5" />}
-                  </button>
-                );
-              })()}
-
-              {/* Acceso 3: Gastos */}
-              {(() => {
-                const isActive = activeTab === 'gastos';
-                return (
-                  <button
-                    onClick={() => handleTabChange('gastos')}
-                    className={`relative flex-1 flex flex-col items-center justify-center py-1.5 px-2 h-[58px] rounded-2xl transition-all duration-200 cursor-pointer select-none active:scale-90 ${
-                      isActive 
-                        ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/25 font-bold scale-[1.03]' 
-                        : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100/60 font-semibold'
-                    }`}
-                  >
-                    <DollarSign className={`w-5 h-5 transition-transform duration-200 ${isActive ? 'scale-110 text-emerald-400' : 'text-slate-500'}`} />
-                    <span className={`text-[10px] tracking-tight mt-1 truncate ${isActive ? 'text-white font-black' : 'text-slate-500 font-bold'}`}>
-                      Gastos
-                    </span>
-                    {isActive && <span className="w-3 h-0.5 rounded-full bg-emerald-400 mt-0.5" />}
-                  </button>
-                );
-              })()}
-
-              {/* Acceso 4: Tareas */}
-              {(() => {
-                const isActive = activeTab === 'tareas';
-                return (
-                  <button
-                    onClick={() => handleTabChange('tareas')}
-                    className={`relative flex-1 flex flex-col items-center justify-center py-1.5 px-2 h-[58px] rounded-2xl transition-all duration-200 cursor-pointer select-none active:scale-90 ${
-                      isActive 
-                        ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/25 font-bold scale-[1.03]' 
-                        : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100/60 font-semibold'
-                    }`}
-                  >
-                    <CheckSquare className={`w-5 h-5 transition-transform duration-200 ${isActive ? 'scale-110 text-emerald-400' : 'text-slate-500'}`} />
-                    <span className={`text-[10px] tracking-tight mt-1 truncate ${isActive ? 'text-white font-black' : 'text-slate-500 font-bold'}`}>
-                      Tareas
-                    </span>
-                    {isActive && <span className="w-3 h-0.5 rounded-full bg-emerald-400 mt-0.5" />}
-                  </button>
-                );
-              })()}
+              })}
 
               {/* Acceso 5: Menú / Más / Módulo Activo */}
               {(() => {
-                const isPrimary = ['tablero', 'personal', 'gastos', 'tareas'].includes(activeTab);
+                const isPrimary = mobileDockItems.some(i => i.id === activeTab);
                 const activeSecondaryItem = !isPrimary ? navItems.find(i => i.id === activeTab) : null;
                 const Icon = activeSecondaryItem ? activeSecondaryItem.icon : LayoutGrid;
                 const label = activeSecondaryItem ? activeSecondaryItem.label.split(' ')[0] : 'Menú';

@@ -29,7 +29,23 @@ import {
   FileText,
   MapPin,
   Phone,
-  CreditCard
+  CreditCard,
+  ChevronUp,
+  ChevronDown,
+  ArrowUp,
+  ArrowDown,
+  LayoutDashboard,
+  Users,
+  Car,
+  DollarSign,
+  CheckSquare,
+  FileSignature,
+  FileStack,
+  FileWarning,
+  Settings,
+  Plus,
+  RotateCcw,
+  SlidersHorizontal
 } from 'lucide-react';
 import { 
   updateAppSettings, 
@@ -54,6 +70,7 @@ interface SettingsSectionProps {
   imgbbApiKey: string;
   appVersion: string;
   appStatusColor: string;
+  menuOrder?: string[];
   mobileNavSections: string[];
   birthdayPrompt: string;
   birthdayVideoPrompt: string;
@@ -78,6 +95,7 @@ export function SettingsSection({
   imgbbApiKey,
   appVersion,
   appStatusColor,
+  menuOrder,
   mobileNavSections,
   birthdayPrompt,
   birthdayVideoPrompt,
@@ -87,6 +105,12 @@ export function SettingsSection({
 }: SettingsSectionProps) {
   // Local active tab for categories
   const [activeCategory, setActiveCategory] = useState<CategoryType>('general');
+  const [navSubTab, setNavSubTab] = useState<'sidebar' | 'mobile'>('sidebar');
+
+  const defaultMenuOrder = [
+    'tablero', 'personal', 'autos', 'gastos', 'tareas', 
+    'pagares', 'formatos', 'fallos', 'mascota', 'imprenta', 'ajustes'
+  ];
 
   // Form states
   const [tempCompanyName, setTempCompanyName] = useState(companyName);
@@ -102,7 +126,14 @@ export function SettingsSection({
   const [tempImgbbApiKey, setTempImgbbApiKey] = useState(imgbbApiKey);
   const [tempAppVersion, setTempAppVersion] = useState(appVersion);
   const [tempAppStatusColor, setTempAppStatusColor] = useState(appStatusColor);
-  const [tempMobileNavSections, setTempMobileNavSections] = useState<string[]>(mobileNavSections);
+  const [tempMenuOrder, setTempMenuOrder] = useState<string[]>(() => {
+    if (menuOrder && menuOrder.length > 0) return menuOrder;
+    return defaultMenuOrder;
+  });
+  const [tempMobileNavSections, setTempMobileNavSections] = useState<string[]>(() => {
+    if (mobileNavSections && mobileNavSections.length > 0) return mobileNavSections;
+    return ['tablero', 'personal', 'gastos', 'tareas'];
+  });
   const [tempBirthdayPrompt, setTempBirthdayPrompt] = useState(birthdayPrompt);
   const [tempBirthdayVideoPrompt, setTempBirthdayVideoPrompt] = useState(birthdayVideoPrompt);
   const [tempBirthdayWhatsAppTemplate, setTempBirthdayWhatsAppTemplate] = useState(birthdayWhatsAppTemplate);
@@ -133,7 +164,10 @@ export function SettingsSection({
     setTempImgbbApiKey(imgbbApiKey);
     setTempAppVersion(appVersion);
     setTempAppStatusColor(appStatusColor);
-    setTempMobileNavSections(mobileNavSections);
+    if (menuOrder && menuOrder.length > 0) {
+      setTempMenuOrder(menuOrder);
+    }
+    setTempMobileNavSections(mobileNavSections && mobileNavSections.length > 0 ? mobileNavSections : ['tablero', 'personal', 'gastos', 'tareas']);
     setTempBirthdayPrompt(birthdayPrompt);
     setTempBirthdayVideoPrompt(birthdayVideoPrompt);
     setTempBirthdayWhatsAppTemplate(birthdayWhatsAppTemplate);
@@ -141,7 +175,7 @@ export function SettingsSection({
   }, [
     companyName, companyLogoUrl, companyRfc, companyAddress, companyPhone, showCompanyInfoOnCredential,
     mascotaName, mascotaUrl, imprentaUrl, googleApiKey, 
-    imgbbApiKey, appVersion, appStatusColor, mobileNavSections, 
+    imgbbApiKey, appVersion, appStatusColor, menuOrder, mobileNavSections, 
     birthdayPrompt, birthdayVideoPrompt, birthdayWhatsAppTemplate,
     multiOfficeEnabled
   ]);
@@ -261,6 +295,47 @@ export function SettingsSection({
     }
   };
 
+  const moveMenuItem = (index: number, direction: 'up' | 'down') => {
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= tempMenuOrder.length) return;
+    const updated = [...tempMenuOrder];
+    const [moved] = updated.splice(index, 1);
+    updated.splice(targetIndex, 0, moved);
+    setTempMenuOrder(updated);
+  };
+
+  const moveMobileItem = (index: number, direction: 'up' | 'down') => {
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= tempMobileNavSections.length) return;
+    const updated = [...tempMobileNavSections];
+    const [moved] = updated.splice(index, 1);
+    updated.splice(targetIndex, 0, moved);
+    setTempMobileNavSections(updated);
+  };
+
+  const removeMobileItem = (id: string) => {
+    setTempMobileNavSections(prev => prev.filter(item => item !== id));
+  };
+
+  const addMobileItem = (id: string) => {
+    if (!tempMobileNavSections.includes(id)) {
+      setTempMobileNavSections(prev => [...prev, id]);
+    }
+  };
+
+  const syncMobileWithSidebar = () => {
+    const candidates = tempMenuOrder.filter(id => id !== 'ajustes').slice(0, 4);
+    setTempMobileNavSections(candidates);
+  };
+
+  const resetMenuOrderToDefault = () => {
+    setTempMenuOrder(defaultMenuOrder);
+  };
+
+  const resetMobileOrderToDefault = () => {
+    setTempMobileNavSections(['tablero', 'personal', 'gastos', 'tareas']);
+  };
+
   const handleSaveSettings = async () => {
     setIsSaving(true);
     const finalMascotaName = tempMascotaName || 'Mascota';
@@ -283,6 +358,7 @@ export function SettingsSection({
         imgbbApiKey: finalImgbbApiKey,
         appVersion: finalVersion,
         appStatusColor: finalColor,
+        menuOrder: tempMenuOrder,
         mobileNavSections: tempMobileNavSections,
         birthdayPrompt: tempBirthdayPrompt,
         birthdayVideoPrompt: tempBirthdayVideoPrompt,
@@ -300,25 +376,26 @@ export function SettingsSection({
     }
   };
 
-  const navAllItems = [
-    { id: 'tablero', label: 'Panel', icon: LayoutGrid },
-    { id: 'personal', label: 'Personal', icon: LayoutGrid },
-    { id: 'autos', label: 'Auto', icon: LayoutGrid },
-    { id: 'gastos', label: 'Gastos', icon: LayoutGrid },
-    { id: 'tareas', label: 'Tareas', icon: LayoutGrid },
-    { id: 'pagares', label: 'Pagarés', icon: LayoutGrid },
-    { id: 'formatos', label: 'Formatos', icon: LayoutGrid },
-    { id: 'fallos', label: 'Fallos', icon: LayoutGrid },
-    { id: 'mascota', label: `Mi ${tempMascotaName}`, icon: LayoutGrid }, 
-    { id: 'imprenta', label: 'Imprenta', icon: LayoutGrid },
-  ];
+  const moduleMetaMap: Record<string, { label: string; icon: any; color: string; bg: string }> = {
+    tablero: { label: 'Panel', icon: LayoutDashboard, color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200' },
+    personal: { label: 'Personal', icon: Users, color: 'text-purple-600', bg: 'bg-purple-50 border-purple-200' },
+    autos: { label: 'Auto', icon: Car, color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200' },
+    gastos: { label: 'Gastos', icon: DollarSign, color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200' },
+    tareas: { label: 'Tareas', icon: CheckSquare, color: 'text-sky-600', bg: 'bg-sky-50 border-sky-200' },
+    pagares: { label: 'Pagarés', icon: FileSignature, color: 'text-indigo-600', bg: 'bg-indigo-50 border-indigo-200' },
+    formatos: { label: 'Formatos', icon: FileStack, color: 'text-teal-600', bg: 'bg-teal-50 border-teal-200' },
+    fallos: { label: 'Fallos', icon: FileWarning, color: 'text-rose-600', bg: 'bg-rose-50 border-rose-200' },
+    mascota: { label: `Mi ${tempMascotaName || 'Mascota'}`, icon: ImageIcon, color: 'text-yellow-600', bg: 'bg-yellow-50 border-yellow-200' },
+    imprenta: { label: 'Imprenta', icon: Printer, color: 'text-slate-600', bg: 'bg-slate-100 border-slate-200' },
+    ajustes: { label: 'Ajustes', icon: Settings, color: 'text-slate-700', bg: 'bg-slate-100 border-slate-200' },
+  };
 
   const categories = [
     { id: 'general', label: 'General / Oficina', icon: Building2, desc: 'Identidad, versión y colores de la app.' },
     { id: 'mascota', label: `Mascota (${tempMascotaName})`, icon: Sparkles, desc: 'Nombre, avatar e imagen de la mascota.' },
     { id: 'apis', label: 'APIs y Llaves', icon: Key, desc: 'Configuración de Gemini e imgBB.' },
     { id: 'mensajeria', label: 'IA y Mensajería', icon: MessageSquare, desc: 'Prompts y plantillas de cumpleaños.' },
-    { id: 'navegacion', label: 'Barra Móvil', icon: LayoutGrid, desc: 'Secciones activas en celular.' },
+    { id: 'navegacion', label: 'Menús y Navegación', icon: SlidersHorizontal, desc: 'Orden del menú lateral y de la barra móvil.' },
     { id: 'mantenimiento', label: 'Mantenimiento', icon: Database, desc: 'Respaldos y limpieza de datos.' },
   ];
 
@@ -913,48 +990,319 @@ La mascota salta de alegría sonriendo a la cámara, rodeada de confeti brillant
               </div>
             )}
 
-            {/* 5. NAV ITEMS */}
+            {/* 5. MENÚS Y NAVEGACIÓN (ORDEN LATERAL Y MÓVIL) */}
             {activeCategory === 'navegacion' && (
-              <div className="bg-white p-6 rounded-2xl border border-gray-150 shadow-sm space-y-5">
-                <div className="flex items-center gap-2 border-b border-gray-100 pb-3">
-                  <LayoutGrid className="w-5 h-5 text-indigo-500" />
-                  <h3 className="text-sm font-bold text-gray-800">Menú de Navegación Móvil</h3>
-                </div>
+              <div className="bg-white p-5 sm:p-6 rounded-2xl border border-gray-150 shadow-sm space-y-6">
+                
+                {/* Header */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-100 pb-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+                      <SlidersHorizontal className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-gray-900">Personalización de Menús</h3>
+                      <p className="text-[11px] text-gray-500 font-medium">
+                        Configura el orden visual de los módulos en el menú lateral y en dispositivos móviles.
+                      </p>
+                    </div>
+                  </div>
 
-                <div>
-                  <p className="text-[10px] text-gray-400 mb-4">
-                    Selecciona qué pestañas aparecerán visibles en la barra de navegación inferior en dispositivos móviles (máximo 5 sugerido para un mejor rendimiento visual).
-                  </p>
-
-                  <div className="grid grid-cols-2 gap-3.5">
-                    {navAllItems.map(item => {
-                      const isSelected = tempMobileNavSections.includes(item.id);
-                      return (
-                        <button
-                          key={item.id}
-                          onClick={() => {
-                            if (isSelected) {
-                              setTempMobileNavSections(tempMobileNavSections.filter(id => id !== item.id));
-                            } else {
-                              setTempMobileNavSections([...tempMobileNavSections, item.id]);
-                            }
-                          }}
-                          className={`flex items-center justify-between p-3 rounded-xl border-2 transition-all text-left ${
-                            isSelected
-                              ? 'border-indigo-500 bg-indigo-50/50 text-indigo-700'
-                              : 'border-gray-100 bg-gray-50/50 text-gray-400 hover:border-gray-200'
-                          }`}
-                          id={`setting-nav-${item.id}`}
-                        >
-                          <span className="text-xs font-bold">{item.label}</span>
-                          <div className={`w-5 h-5 rounded-lg flex items-center justify-center transition-colors ${isSelected ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-400'}`}>
-                            {isSelected && <Check className="w-3.5 h-3.5" />}
-                          </div>
-                        </button>
-                      );
-                    })}
+                  {/* Sub-tab Pill Switcher */}
+                  <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200/80 shrink-0 self-start sm:self-auto">
+                    <button
+                      type="button"
+                      onClick={() => setNavSubTab('sidebar')}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                        navSubTab === 'sidebar'
+                          ? 'bg-white text-slate-900 shadow-2xs'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      <LayoutDashboard className="w-3.5 h-3.5" /> Menú Lateral
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNavSubTab('mobile')}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                        navSubTab === 'mobile'
+                          ? 'bg-white text-slate-900 shadow-2xs'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      <Smartphone className="w-3.5 h-3.5" /> Menú Móvil
+                    </button>
                   </div>
                 </div>
+
+                {/* --- SUB-TAB 1: MENÚ LATERAL (ESCRITORIO) --- */}
+                {navSubTab === 'sidebar' && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-200/70">
+                      <div>
+                        <p className="text-xs font-bold text-slate-800">Orden del Menú Lateral</p>
+                        <p className="text-[11px] text-slate-500">
+                          Usa las flechas para subir o bajar cada módulo en la barra lateral izquierda.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={resetMenuOrderToDefault}
+                        className="px-2.5 py-1 text-[11px] font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 rounded-lg transition-colors flex items-center gap-1 cursor-pointer border border-slate-200"
+                        title="Restablecer al orden original"
+                      >
+                        <RotateCcw className="w-3 h-3" /> Orden por Defecto
+                      </button>
+                    </div>
+
+                    {/* Ordered List of Sidebar Modules */}
+                    <div className="space-y-2">
+                      {tempMenuOrder.map((id, index) => {
+                        const meta = moduleMetaMap[id] || { 
+                          label: id, 
+                          icon: LayoutGrid, 
+                          color: 'text-slate-600', 
+                          bg: 'bg-slate-100 border-slate-200' 
+                        };
+                        const Icon = meta.icon;
+                        const isFirst = index === 0;
+                        const isLast = index === tempMenuOrder.length - 1;
+
+                        return (
+                          <div
+                            key={id}
+                            className="flex items-center justify-between p-2.5 sm:p-3 bg-white hover:bg-slate-50/80 rounded-xl border border-slate-200/80 shadow-2xs transition-all group"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <span className="w-6 h-6 rounded-lg bg-slate-100 text-slate-600 text-[11px] font-mono font-bold flex items-center justify-center shrink-0 border border-slate-200/60">
+                                {index + 1}
+                              </span>
+
+                              <div className={`w-8 h-8 rounded-lg ${meta.bg} ${meta.color} flex items-center justify-center shrink-0`}>
+                                <Icon className="w-4 h-4" />
+                              </div>
+
+                              <div className="min-w-0">
+                                <p className="text-xs font-bold text-slate-800 truncate">
+                                  {meta.label}
+                                </p>
+                                <p className="text-[10px] text-slate-400 truncate">
+                                  {id === 'tablero' ? 'Vista principal con métricas' : `Módulo de ${meta.label}`}
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Move Up / Down Buttons */}
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => moveMenuItem(index, 'up')}
+                                disabled={isFirst}
+                                className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+                                  isFirst 
+                                    ? 'border-slate-100 text-slate-300 cursor-not-allowed' 
+                                    : 'border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900 active:scale-95'
+                                }`}
+                                title="Subir posición"
+                              >
+                                <ChevronUp className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => moveMenuItem(index, 'down')}
+                                disabled={isLast}
+                                className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+                                  isLast 
+                                    ? 'border-slate-100 text-slate-300 cursor-not-allowed' 
+                                    : 'border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900 active:scale-95'
+                                }`}
+                                title="Bajar posición"
+                              >
+                                <ChevronDown className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* --- SUB-TAB 2: MENÚ MÓVIL (BARRA INFERIOR Y LANZADOR) --- */}
+                {navSubTab === 'mobile' && (
+                  <div className="space-y-5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
+                      <div>
+                        <p className="text-xs font-bold text-indigo-950">Accesos Rápidos de la Barra Inferior</p>
+                        <p className="text-[11px] text-indigo-700">
+                          Elige hasta 4 accesos directos en el celular. El 5to acceso siempre será "Menú" para abrir los demás módulos.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={syncMobileWithSidebar}
+                          className="px-2.5 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-100/70 rounded-lg transition-colors cursor-pointer border border-indigo-200"
+                          title="Usar los primeros módulos del menú lateral"
+                        >
+                          Sincronizar con Menú Lateral
+                        </button>
+                        <button
+                          type="button"
+                          onClick={resetMobileOrderToDefault}
+                          className="px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-white rounded-lg transition-colors cursor-pointer border border-slate-200"
+                          title="Restablecer"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Active Mobile Quick Access List */}
+                    <div className="space-y-2">
+                      <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 flex items-center justify-between">
+                        <span>Pestañas en Barra Móvil ({tempMobileNavSections.length}/4)</span>
+                        <span className="text-[10px] text-slate-400 font-normal">Máximo 4 sugeridos</span>
+                      </div>
+
+                      {tempMobileNavSections.length === 0 ? (
+                        <div className="p-4 text-center text-xs text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                          No has seleccionado accesos rápidos. Se mostrarán los 4 primeros módulos activos.
+                        </div>
+                      ) : (
+                        tempMobileNavSections.map((id, index) => {
+                          const meta = moduleMetaMap[id] || { 
+                            label: id, 
+                            icon: LayoutGrid, 
+                            color: 'text-slate-600', 
+                            bg: 'bg-slate-100 border-slate-200' 
+                          };
+                          const Icon = meta.icon;
+                          const isFirst = index === 0;
+                          const isLast = index === tempMobileNavSections.length - 1;
+
+                          return (
+                            <div
+                              key={id}
+                              className="flex items-center justify-between p-2.5 sm:p-3 bg-white rounded-xl border border-slate-200 shadow-2xs"
+                            >
+                              <div className="flex items-center gap-3 min-w-0">
+                                <span className="w-6 h-6 rounded-lg bg-indigo-50 text-indigo-700 text-[11px] font-mono font-bold flex items-center justify-center shrink-0 border border-indigo-100">
+                                  {index + 1}
+                                </span>
+                                <div className={`w-8 h-8 rounded-lg ${meta.bg} ${meta.color} flex items-center justify-center shrink-0`}>
+                                  <Icon className="w-4 h-4" />
+                                </div>
+                                <span className="text-xs font-bold text-slate-800 truncate">
+                                  {meta.label}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => moveMobileItem(index, 'up')}
+                                  disabled={isFirst}
+                                  className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+                                    isFirst 
+                                      ? 'border-slate-100 text-slate-300 cursor-not-allowed' 
+                                      : 'border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900 active:scale-95'
+                                  }`}
+                                  title="Subir"
+                                >
+                                  <ChevronUp className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => moveMobileItem(index, 'down')}
+                                  disabled={isLast}
+                                  className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+                                    isLast 
+                                      ? 'border-slate-100 text-slate-300 cursor-not-allowed' 
+                                      : 'border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900 active:scale-95'
+                                  }`}
+                                  title="Bajar"
+                                >
+                                  <ChevronDown className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => removeMobileItem(id)}
+                                  className="p-1.5 rounded-lg border border-rose-100 text-rose-500 hover:bg-rose-50 transition-colors ml-1 cursor-pointer"
+                                  title="Quitar de barra rápida"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    {/* Add Module to Quick Access */}
+                    {tempMobileNavSections.length < 4 && (
+                      <div className="pt-2">
+                        <p className="text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-2">
+                          Agregar Módulo a la Barra Rápida:
+                        </p>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                          {tempMenuOrder
+                            .filter(id => !tempMobileNavSections.includes(id) && id !== 'ajustes')
+                            .map(id => {
+                              const meta = moduleMetaMap[id] || { label: id, icon: LayoutGrid, color: 'text-slate-600', bg: 'bg-slate-100' };
+                              const Icon = meta.icon;
+                              return (
+                                <button
+                                  key={id}
+                                  type="button"
+                                  onClick={() => addMobileItem(id)}
+                                  className="flex items-center gap-2 p-2 rounded-xl border border-dashed border-slate-300 hover:border-indigo-400 hover:bg-indigo-50/50 text-slate-700 transition-all text-left cursor-pointer group"
+                                >
+                                  <Plus className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-600" />
+                                  <span className="text-xs font-semibold truncate">{meta.label}</span>
+                                </button>
+                              );
+                            })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Live Mobile Dock Preview */}
+                    <div className="pt-3 border-t border-slate-100">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2.5">
+                        Vista Previa en Celular:
+                      </p>
+                      <div className="bg-slate-900/90 rounded-2xl p-2 max-w-sm mx-auto shadow-md border border-slate-800 flex items-center justify-around">
+                        {tempMobileNavSections.slice(0, 4).map((id, idx) => {
+                          const meta = moduleMetaMap[id] || { label: id, icon: LayoutGrid };
+                          const Icon = meta.icon;
+                          const isFirst = idx === 0;
+                          return (
+                            <div 
+                              key={id} 
+                              className={`flex flex-col items-center justify-center p-1.5 rounded-xl text-center min-w-[50px] ${
+                                isFirst ? 'text-white' : 'text-slate-400'
+                              }`}
+                            >
+                              <Icon className={`w-4 h-4 ${isFirst ? 'text-emerald-400' : 'text-slate-400'}`} />
+                              <span className="text-[9px] font-bold mt-0.5 truncate max-w-[52px]">
+                                {meta.label.split(' ')[0]}
+                              </span>
+                              {isFirst && <span className="w-2 h-0.5 rounded-full bg-emerald-400 mt-0.5" />}
+                            </div>
+                          );
+                        })}
+                        <div className="flex flex-col items-center justify-center p-1.5 rounded-xl text-center min-w-[50px] text-slate-400">
+                          <LayoutGrid className="w-4 h-4 text-slate-400" />
+                          <span className="text-[9px] font-bold mt-0.5">Menú</span>
+                          <span className="text-[7px] font-mono text-slate-500">•••</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
               </div>
             )}
 
