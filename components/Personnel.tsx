@@ -9,6 +9,8 @@ export interface ComplementedField {
   label: string;
   oldValue: string;
   newValue: string;
+  displayOldValue?: string;
+  displayNewValue?: string;
   selected?: boolean;
 }
 
@@ -167,27 +169,6 @@ export const Personnel: React.FC<PersonnelProps> = ({
       });
   }, [employees]);
 
-  const FIELD_LABELS: Record<string, string> = {
-    guarantorName: 'Nombre del Aval',
-    guarantorPhone: 'Teléfono del Aval',
-    guarantorAddress: 'Domicilio del Aval',
-    curp: 'CURP',
-    phone: 'Teléfono',
-    email: 'WhatsApp / Contacto',
-    accessCode: 'PIN de Acceso',
-    address: 'Domicilio Particular',
-    birthDate: 'Fecha de Nacimiento',
-    gender: 'Género',
-    civilStatus: 'Estado Civil',
-    nationality: 'Nacionalidad',
-    salary: 'Salario',
-    plaza: 'Plaza',
-    position: 'Puesto',
-    hireDate: 'Fecha de Ingreso',
-    groupName: 'Grupo',
-    supervisionName: 'Supervisión'
-  };
-
   const normalizeCleanStr = (str?: string) => {
     if (!str) return '';
     return str
@@ -201,6 +182,110 @@ export const Personnel: React.FC<PersonnelProps> = ({
   const normalizeCleanPhone = (phone?: string) => {
     if (!phone) return '';
     return phone.replace(/\D/g, '').slice(-10);
+  };
+
+  const getLinkedName = (id?: string) => {
+    if (!id) return null;
+    const emp = employees.find(e => e.id === id);
+    if (!emp) return 'Desconocido';
+    if (emp.category === 'Supervisoras' && emp.supervisionName) {
+      return emp.supervisionName;
+    }
+    return `${emp.firstName} ${emp.lastName}`.trim();
+  };
+
+  const findSupervisorByNameOrSupervision = (
+    query?: string,
+    candidates: Employee[] = []
+  ): Employee | undefined => {
+    if (!query) return undefined;
+    const clean = normalizeCleanStr(query);
+    if (!clean || clean.length < 2) return undefined;
+
+    // 1. Match by ID if an ID was passed
+    const byId = candidates.find(s => s.id === query.trim());
+    if (byId) return byId;
+
+    // 2. Exact match by full name or supervisionName
+    let match = candidates.find(s => {
+      const fullName = normalizeCleanStr(`${s.firstName} ${s.lastName}`);
+      const supName = normalizeCleanStr(s.supervisionName);
+      return fullName === clean || (supName && supName === clean);
+    });
+    if (match) return match;
+
+    // 3. Substring match
+    match = candidates.find(s => {
+      const fullName = normalizeCleanStr(`${s.firstName} ${s.lastName}`);
+      return (fullName.length >= 4 && clean.includes(fullName)) || (clean.length >= 4 && fullName.includes(clean));
+    });
+    if (match) return match;
+
+    // 4. Token-based word match
+    const queryTokens = query
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter(t => t.length > 2 && !['de', 'del', 'la', 'las', 'los', 'san', 'santa', 'supervisora', 'supervision'].includes(t));
+
+    if (queryTokens.length >= 2) {
+      match = candidates.find(s => {
+        const sTokens = `${s.firstName || ''} ${s.lastName || ''} ${s.supervisionName || ''}`
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/[^a-z0-9\s]/g, " ")
+          .split(/\s+/)
+          .filter(t => t.length > 2);
+        return queryTokens.every(qt => sTokens.includes(qt));
+      });
+      if (match) return match;
+    } else if (queryTokens.length === 1) {
+      const singleToken = queryTokens[0];
+      const matchingSupervisors = candidates.filter(s => {
+        const sTokens = `${s.firstName || ''} ${s.lastName || ''} ${s.supervisionName || ''}`
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/[^a-z0-9\s]/g, " ")
+          .split(/\s+/)
+          .filter(t => t.length > 2);
+        return sTokens.includes(singleToken);
+      });
+      if (matchingSupervisors.length === 1) {
+        return matchingSupervisors[0];
+      }
+    }
+
+    return undefined;
+  };
+
+  const FIELD_LABELS: Record<string, string> = {
+    category: 'Categoría',
+    position: 'Puesto',
+    linkedSupervisorId: 'Supervisora Vinculada',
+    groupName: 'Nombre del Grupo',
+    supervisionName: 'Supervisión',
+    phone: 'Teléfono',
+    email: 'WhatsApp / Contacto',
+    address: 'Domicilio Particular',
+    birthDate: 'Fecha de Nacimiento',
+    hireDate: 'Fecha de Ingreso',
+    contractStartDate: 'Fecha de Contrato',
+    status: 'Estado Laboral',
+    gender: 'Género',
+    curp: 'CURP',
+    plaza: 'Plaza',
+    guarantorName: 'Nombre del Aval',
+    guarantorPhone: 'Teléfono del Aval',
+    guarantorAddress: 'Domicilio del Aval',
+    civilStatus: 'Estado Civil',
+    nationality: 'Nacionalidad',
+    salary: 'Salario Acordado',
+    accessCode: 'PIN de Acceso',
+    linkedExecutiveId: 'Ejecutivo Vinculado'
   };
 
   const isPhoneLike = (val?: string): boolean => {
@@ -328,7 +413,7 @@ export const Personnel: React.FC<PersonnelProps> = ({
         }
 
         // 4. Dates: Must be valid date strings
-        if (key === 'birthDate' || key === 'hireDate') {
+        if (key === 'birthDate' || key === 'hireDate' || key === 'contractStartDate') {
           if (!/^\d{4}-\d{2}-\d{2}$/.test(newVal) && isNaN(Date.parse(newVal))) return;
         }
 
@@ -337,13 +422,27 @@ export const Personnel: React.FC<PersonnelProps> = ({
           if (isPhoneLike(newVal) || newVal.replace(/\D/g, '').length >= 7) return;
         }
 
+        // 6. Category: Sanity check (must be valid category)
+        if (key === 'category') {
+          if (!['Oficina', 'Ejecutivos', 'Supervisoras', 'Promotoras'].includes(newVal)) return;
+        }
+
         // If existing is missing or different
         if (!oldVal || oldVal.toLowerCase() !== newVal.toLowerCase()) {
+          const displayOld = key === 'linkedSupervisorId' 
+            ? (getLinkedName(oldVal) || '(Sin supervisora)')
+            : (key === 'linkedExecutiveId' ? (getLinkedName(oldVal) || '(Sin ejecutivo)') : undefined);
+          const displayNew = key === 'linkedSupervisorId'
+            ? (getLinkedName(newVal) || '(Supervisora vinculada)')
+            : (key === 'linkedExecutiveId' ? (getLinkedName(newVal) || '(Ejecutivo vinculado)') : undefined);
+
           complements.push({
             field: key as any,
             label,
             oldValue: oldVal || '(Vacío)',
             newValue: newVal,
+            displayOldValue: displayOld,
+            displayNewValue: displayNew,
             selected: true
           });
         }
@@ -936,7 +1035,8 @@ export const Personnel: React.FC<PersonnelProps> = ({
               n.includes('apellido') || n.includes('celular') || n.includes('telefono') ||
               n.includes('puesto') || n.includes('plaza') || n.includes('curp') ||
               n.includes('ingreso') || n.includes('nacimiento') || n.includes('aval') ||
-              n.includes('sucursal') || n.includes('ruta')
+              n.includes('sucursal') || n.includes('ruta') || n.includes('supervis') ||
+              n.includes('grupo') || n.includes('contrato')
             ) {
               count++;
             }
@@ -954,6 +1054,7 @@ export const Personnel: React.FC<PersonnelProps> = ({
           const norm = normalizeCol(colName);
           if (!norm) return;
 
+          // 1. AVAL (Verificar primero para no confundir con teléfono o nombre del empleado)
           if (norm.includes('aval') || norm.includes('garante') || norm.includes('referencia')) {
             if (norm.includes('telefono') || norm.includes('celular') || norm.includes('whatsapp') || norm.includes('tel') || norm.includes('movil') || norm.includes('contacto')) {
               if (colMap['guarantorPhone'] === undefined) colMap['guarantorPhone'] = idx;
@@ -962,42 +1063,72 @@ export const Personnel: React.FC<PersonnelProps> = ({
             } else {
               if (colMap['guarantorName'] === undefined) colMap['guarantorName'] = idx;
             }
+          // 2. SUPERVISORA / SUPERVISOR (Verificar antes de "nombre" para evitar colisiones con "Nombre de Supervisora")
+          } else if (norm.includes('supervisora') || norm.includes('supervisor')) {
+            if (colMap['supervisor'] === undefined) colMap['supervisor'] = idx;
+          // 3. NOMBRE DEL GRUPO / GRUPO / EQUIPO (Verificar antes de "nombre" para evitar colisiones)
+          } else if (norm.includes('grupo') || norm.includes('equipo')) {
+            if (colMap['groupName'] === undefined) colMap['groupName'] = idx;
+          // 4. SUPERVISIÓN (Nombre de supervisión)
+          } else if (norm.includes('supervision') || norm.includes('coordinador')) {
+            if (colMap['supervisionName'] === undefined) colMap['supervisionName'] = idx;
+          // 5. APELLIDO
           } else if (norm.includes('apellido') || norm.includes('lastname') || norm.includes('paterno') || norm.includes('materno')) {
             if (colMap['lastName'] === undefined) colMap['lastName'] = idx;
+          // 6. NOMBRE COMPLETO / COLABORADOR / EMPLEADO
           } else if (norm.includes('nombrecompleto') || norm.includes('colaborador') || norm.includes('empleado') || norm.includes('personal') || norm.includes('trabajador')) {
             if (colMap['fullName'] === undefined) colMap['fullName'] = idx;
+          // 7. NOMBRE (excluyendo aval, grupo y supervisora ya procesados)
           } else if (norm.includes('nombre') || norm.includes('firstname')) {
             if (colMap['firstName'] === undefined) colMap['firstName'] = idx;
+          // 8. CELULAR / TELÉFONO DEL COLABORADOR
           } else if (norm.includes('celular') || norm.includes('whatsapp') || norm.includes('telefono') || norm.includes('movil') || norm.includes('contacto') || norm.includes('phone') || norm === 'tel') {
             if (colMap['email'] === undefined) colMap['email'] = idx;
+          // 9. PIN ACCESO
           } else if (norm.includes('pin') || norm.includes('acceso') || norm.includes('clave') || norm.includes('pass') || norm.includes('codigo')) {
             if (colMap['accessCode'] === undefined) colMap['accessCode'] = idx;
+          // 10. PUESTO / CARGO / ROL
           } else if (norm.includes('puesto') || norm.includes('cargo') || norm.includes('position') || norm.includes('rol') || norm.includes('funcion') || norm.includes('ocupacion')) {
             if (colMap['position'] === undefined) colMap['position'] = idx;
+          // 11. PLAZA / RUTA / SUCURSAL
           } else if ((norm.includes('plaza') || norm.includes('sucursal') || norm.includes('sede') || norm.includes('ciudad') || norm.includes('zona') || norm.includes('ruta') || norm.includes('oficina') || norm.includes('adscripcion')) && !norm.includes('telefono') && !norm.includes('celular') && !norm.includes('tel') && !norm.includes('aval')) {
             if (colMap['plaza'] === undefined) colMap['plaza'] = idx;
+          // 12. CATEGORÍA / ÁREA
           } else if (norm.includes('categoria') || norm.includes('departamento') || norm.includes('depto') || norm.includes('area')) {
             if (colMap['category'] === undefined) colMap['category'] = idx;
-          } else if ((norm.includes('estado') || norm.includes('estatus') || norm.includes('status') || norm.includes('activo')) && !norm.includes('civil')) {
-            if (colMap['status'] === undefined) colMap['status'] = idx;
+          // 13. CONTRATO
+          } else if (norm.includes('contrato')) {
+            if (colMap['contractStartDate'] === undefined) colMap['contractStartDate'] = idx;
+          // 14. INGRESO / ALTA
           } else if (norm.includes('ingreso') || norm.includes('contratacion') || norm.includes('alta') || norm.includes('fechainicio') || norm.includes('fechaingreso') || norm.includes('antiguedad')) {
             if (colMap['hireDate'] === undefined) colMap['hireDate'] = idx;
+          // 15. NACIMIENTO / CUMPLEAÑOS
           } else if (norm.includes('nacimiento') || norm.includes('cumple') || norm.includes('fechanac')) {
             if (colMap['birthDate'] === undefined) colMap['birthDate'] = idx;
+          // 16. SEXO / GÉNERO
           } else if (norm.includes('sexo') || norm.includes('genero') || norm.includes('gender') || norm.includes('sex')) {
             if (colMap['gender'] === undefined) colMap['gender'] = idx;
+          // 17. CURP
           } else if (norm.includes('curp')) {
             if (colMap['curp'] === undefined) colMap['curp'] = idx;
-          } else if (norm.includes('supervision') || norm.includes('grupo') || norm.includes('equipo') || norm.includes('coordinador')) {
+          // 18. COMBINADO SUPERVISIÓN O GRUPO
+          } else if (norm.includes('supervision') || norm.includes('coordinador')) {
             if (colMap['supervisionOrGroup'] === undefined) colMap['supervisionOrGroup'] = idx;
+          // 19. DOMICILIO DEL COLABORADOR
           } else if (norm.includes('domicilio') || norm.includes('direccion') || norm.includes('calle') || norm.includes('vivienda')) {
             if (colMap['address'] === undefined) colMap['address'] = idx;
+          // 20. ESTADO CIVIL
           } else if (norm.includes('civil')) {
             if (colMap['civilStatus'] === undefined) colMap['civilStatus'] = idx;
+          // 21. NACIONALIDAD
           } else if (norm.includes('nacionalidad') || norm.includes('pais')) {
             if (colMap['nationality'] === undefined) colMap['nationality'] = idx;
+          // 22. SALARIO
           } else if (norm.includes('salario') || norm.includes('sueldo') || norm.includes('pago') || norm.includes('percepcion') || norm.includes('honorario')) {
             if (colMap['salary'] === undefined) colMap['salary'] = idx;
+          // 23. ESTADO LABORAL / ESTATUS
+          } else if ((norm.includes('estado') || norm.includes('estatus') || norm.includes('status') || norm.includes('activo')) && !norm.includes('civil')) {
+            if (colMap['status'] === undefined) colMap['status'] = idx;
           }
         });
 
@@ -1009,7 +1140,7 @@ export const Personnel: React.FC<PersonnelProps> = ({
             return colMap[field] !== undefined ? row[colMap[field]] : undefined;
           }
           // Only if no headers were detected at all, use standard fallback positional index
-          return row[fallbackIdx];
+          return fallbackIdx >= 0 ? row[fallbackIdx] : undefined;
         };
 
         const parsedEmployees: Partial<Employee>[] = [];
@@ -1046,7 +1177,25 @@ export const Personnel: React.FC<PersonnelProps> = ({
           const rawPin = String(getCol(row, 'accessCode', 3) || '').replace(/\D/g, '').slice(0, 4);
           let rawPosition = String(getCol(row, 'position', 4) || '').trim();
           let rawPlaza = String(getCol(row, 'plaza', 5) || '').trim();
-          const category = normalizeCategory(getCol(row, 'category', 6));
+          const rawCategoryCol = getCol(row, 'category', 6);
+
+          // Inferencia inteligente de categoría:
+          let category: PersonnelCategory = 'Oficina';
+          if (rawCategoryCol) {
+            category = normalizeCategory(rawCategoryCol);
+          }
+          // Si no vino columna de categoría o quedó en Oficina por omisión, inferir según PUESTO:
+          if (!rawCategoryCol || category === 'Oficina') {
+            const normPos = normalizeCol(rawPosition);
+            if (normPos.includes('promot')) {
+              category = 'Promotoras';
+            } else if (normPos.includes('supervis')) {
+              category = 'Supervisoras';
+            } else if (normPos.includes('ejecutiv')) {
+              category = 'Ejecutivos';
+            }
+          }
+
           const status = normalizeStatus(getCol(row, 'status', 7));
           const hireDate = formatExcelDate(getCol(row, 'hireDate', 8)) || getLocalDateString();
           const birthDate = formatExcelDate(getCol(row, 'birthDate', 9));
@@ -1106,7 +1255,42 @@ export const Personnel: React.FC<PersonnelProps> = ({
             if (auto) rawCurp = auto;
           }
 
+          // Enlace de Supervisora y Grupo
+          const rawGroupName = String(getCol(row, 'groupName', -1) || '').trim();
+          const rawSupervisor = String(getCol(row, 'supervisor', -1) || '').trim();
+          const rawSupervisionName = String(getCol(row, 'supervisionName', -1) || '').trim();
           const supOrGroup = String(getCol(row, 'supervisionOrGroup', 12) || '').trim();
+
+          let groupName = rawGroupName || (category === 'Promotoras' ? supOrGroup : '');
+          let supervisionName = rawSupervisionName || (category === 'Supervisoras' ? supOrGroup : '');
+          let linkedSupervisorId = '';
+          let linkedExecutiveId = '';
+
+          if (rawSupervisor) {
+            const matchedSup = findSupervisorByNameOrSupervision(rawSupervisor, availableSupervisors) || 
+                               findSupervisorByNameOrSupervision(rawSupervisor, employees);
+            if (matchedSup) {
+              linkedSupervisorId = matchedSup.id;
+              if (matchedSup.linkedExecutiveId) linkedExecutiveId = matchedSup.linkedExecutiveId;
+              if (!rawPlaza && matchedSup.plaza) rawPlaza = matchedSup.plaza;
+              if (!supervisionName) {
+                supervisionName = matchedSup.supervisionName || `${matchedSup.firstName} ${matchedSup.lastName}`.trim();
+              }
+            } else {
+              // Si aún no está en la base de datos, conservar el nombre de la supervisora en supervisionName
+              if (!supervisionName) supervisionName = rawSupervisor;
+            }
+          }
+
+          // Fallback a importSupervisorId si fue seleccionado en el modal para Promotoras
+          if (!linkedSupervisorId && importSupervisorId && category === 'Promotoras') {
+            linkedSupervisorId = importSupervisorId;
+            const sup = availableSupervisors.find(s => s.id === importSupervisorId);
+            if (sup?.linkedExecutiveId) linkedExecutiveId = sup.linkedExecutiveId;
+            if (!rawPlaza && sup?.plaza) rawPlaza = sup.plaza;
+          }
+
+          const contractStartDate = formatExcelDate(getCol(row, 'contractStartDate', -1));
           const address = String(getCol(row, 'address', 13) || '').trim();
           const civilStatus = String(getCol(row, 'civilStatus', 14) || 'Soltero(a)').trim();
           const nationality = String(getCol(row, 'nationality', 15) || 'Mexicana').trim();
@@ -1115,14 +1299,6 @@ export const Personnel: React.FC<PersonnelProps> = ({
           const guarantorName = String(getCol(row, 'guarantorName', 17) || '').trim();
           const guarantorPhone = String(getCol(row, 'guarantorPhone', 18) || '').replace(/\D/g, '').slice(0, 10);
           const guarantorAddress = String(getCol(row, 'guarantorAddress', 19) || '').trim();
-
-          let supervisionName = '';
-          let groupName = '';
-          if (category === 'Supervisoras') {
-            supervisionName = supOrGroup;
-          } else if (category === 'Promotoras') {
-            groupName = supOrGroup;
-          }
 
           parsedEmployees.push({
             firstName: rawFirstName,
@@ -1140,6 +1316,9 @@ export const Personnel: React.FC<PersonnelProps> = ({
             curp: rawCurp,
             supervisionName,
             groupName,
+            linkedSupervisorId,
+            linkedExecutiveId,
+            contractStartDate,
             address,
             civilStatus,
             nationality: nationality || 'Mexicana',
@@ -1149,6 +1328,21 @@ export const Personnel: React.FC<PersonnelProps> = ({
             guarantorAddress
           });
         }
+
+        // Pase 2: Resolución entre filas del mismo archivo Excel
+        parsedEmployees.forEach(p => {
+          if (p.category === 'Promotoras' && !p.linkedSupervisorId && p.supervisionName) {
+            const matchedInBatch = findSupervisorByNameOrSupervision(p.supervisionName, parsedEmployees as Employee[]);
+            if (matchedInBatch) {
+              const matchInDb = findMatchingEmployee(matchedInBatch, employees);
+              if (matchInDb.match) {
+                p.linkedSupervisorId = matchInDb.match.id;
+                if (!p.linkedExecutiveId && matchInDb.match.linkedExecutiveId) p.linkedExecutiveId = matchInDb.match.linkedExecutiveId;
+                if (!p.plaza && matchInDb.match.plaza) p.plaza = matchInDb.match.plaza;
+              }
+            }
+          }
+        });
 
         if (parsedEmployees.length === 0) {
           alert("No se encontraron filas con datos de colaboradores para importar.");
@@ -1326,15 +1520,6 @@ export const Personnel: React.FC<PersonnelProps> = ({
     }
   };
 
-  const getLinkedName = (id?: string) => {
-    if (!id) return null;
-    const emp = employees.find(e => e.id === id);
-    if (!emp) return 'Desconocido';
-    if (emp.category === 'Supervisoras' && emp.supervisionName) {
-      return emp.supervisionName;
-    }
-    return `${emp.firstName} ${emp.lastName}`;
-  };
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-[1700px] w-full mx-auto">
@@ -2263,12 +2448,12 @@ export const Personnel: React.FC<PersonnelProps> = ({
                                                     )}
                                                   </div>
                                                   <div className="flex items-center gap-1.5 mt-1 text-[11px]">
-                                                    <span className="text-slate-400 truncate max-w-[85px]" title={field.oldValue || '(Vacío)'}>
-                                                      {field.oldValue || '(Vacío)'}
+                                                    <span className="text-slate-400 truncate max-w-[95px]" title={field.displayOldValue || field.oldValue || '(Vacío)'}>
+                                                      {field.displayOldValue || field.oldValue || '(Vacío)'}
                                                     </span>
                                                     <span className="text-slate-400">➔</span>
-                                                    <span className="font-bold text-emerald-800 truncate" title={field.newValue}>
-                                                      {field.newValue}
+                                                    <span className="font-bold text-emerald-800 truncate" title={field.displayNewValue || field.newValue}>
+                                                      {field.displayNewValue || field.newValue}
                                                     </span>
                                                   </div>
                                                 </div>
