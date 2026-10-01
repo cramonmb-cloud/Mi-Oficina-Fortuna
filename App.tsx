@@ -178,20 +178,31 @@ function App() {
   const [multiOfficeEnabled, setMultiOfficeEnabled] = useState(false);
   
   const defaultMenuOrder = useMemo(() => [
-    'tablero', 'personal', 'autos', 'gastos', 'tareas', 
+    'tablero', 'callcenter', 'personal', 'autos', 'gastos', 'tareas', 
     'pagares', 'formatos', 'fallos', 'mascota', 'imprenta', 'ajustes'
   ], []);
 
   const [menuOrder, setMenuOrder] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('mi_oficina_menu_order');
-      return saved ? JSON.parse(saved) : [
-        'tablero', 'personal', 'autos', 'gastos', 'tareas', 
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          if (!parsed.includes('callcenter')) {
+            const tabIdx = parsed.indexOf('tablero');
+            if (tabIdx !== -1) parsed.splice(tabIdx + 1, 0, 'callcenter');
+            else parsed.unshift('callcenter');
+          }
+          return parsed;
+        }
+      }
+      return [
+        'tablero', 'callcenter', 'personal', 'autos', 'gastos', 'tareas', 
         'pagares', 'formatos', 'fallos', 'mascota', 'imprenta', 'ajustes'
       ];
     } catch {
       return [
-        'tablero', 'personal', 'autos', 'gastos', 'tareas', 
+        'tablero', 'callcenter', 'personal', 'autos', 'gastos', 'tareas', 
         'pagares', 'formatos', 'fallos', 'mascota', 'imprenta', 'ajustes'
       ];
     }
@@ -570,9 +581,15 @@ function App() {
       setAppVersion(settings.appVersion);
       setAppStatusColor(settings.appStatusColor);
       if (settings.menuOrder && Array.isArray(settings.menuOrder) && settings.menuOrder.length > 0) {
-        setMenuOrder(settings.menuOrder);
+        const orderList = [...settings.menuOrder];
+        if (!orderList.includes('callcenter')) {
+          const tabIdx = orderList.indexOf('tablero');
+          if (tabIdx !== -1) orderList.splice(tabIdx + 1, 0, 'callcenter');
+          else orderList.unshift('callcenter');
+        }
+        setMenuOrder(orderList);
         try {
-          localStorage.setItem('mi_oficina_menu_order', JSON.stringify(settings.menuOrder));
+          localStorage.setItem('mi_oficina_menu_order', JSON.stringify(orderList));
         } catch {}
       }
       if (settings.mobileNavSections) {

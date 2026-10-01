@@ -113,6 +113,24 @@ export function SettingsSection({
     'pagares', 'formatos', 'fallos', 'mascota', 'imprenta', 'ajustes'
   ];
 
+  const sanitizeMenuOrder = (order?: string[]) => {
+    const base = order && order.length > 0 ? [...order] : [...defaultMenuOrder];
+    if (!base.includes('callcenter')) {
+      const tabIdx = base.indexOf('tablero');
+      if (tabIdx !== -1) {
+        base.splice(tabIdx + 1, 0, 'callcenter');
+      } else {
+        base.unshift('callcenter');
+      }
+    }
+    for (const item of defaultMenuOrder) {
+      if (!base.includes(item)) {
+        base.push(item);
+      }
+    }
+    return base;
+  };
+
   // Form states
   const [tempCompanyName, setTempCompanyName] = useState(companyName);
   const [tempCompanyLogoUrl, setTempCompanyLogoUrl] = useState(companyLogoUrl || '');
@@ -128,8 +146,7 @@ export function SettingsSection({
   const [tempAppVersion, setTempAppVersion] = useState(appVersion);
   const [tempAppStatusColor, setTempAppStatusColor] = useState(appStatusColor);
   const [tempMenuOrder, setTempMenuOrder] = useState<string[]>(() => {
-    if (menuOrder && menuOrder.length > 0) return menuOrder;
-    return defaultMenuOrder;
+    return sanitizeMenuOrder(menuOrder);
   });
   const [tempMobileNavSections, setTempMobileNavSections] = useState<string[]>(() => {
     if (mobileNavSections && mobileNavSections.length > 0) return mobileNavSections;
@@ -166,7 +183,7 @@ export function SettingsSection({
     setTempAppVersion(appVersion);
     setTempAppStatusColor(appStatusColor);
     if (menuOrder && menuOrder.length > 0) {
-      setTempMenuOrder(menuOrder);
+      setTempMenuOrder(sanitizeMenuOrder(menuOrder));
     }
     setTempMobileNavSections(mobileNavSections && mobileNavSections.length > 0 ? mobileNavSections : ['tablero', 'personal', 'gastos', 'tareas']);
     setTempBirthdayPrompt(birthdayPrompt);
