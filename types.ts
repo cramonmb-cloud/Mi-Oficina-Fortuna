@@ -281,3 +281,128 @@ export interface VacationRequest {
   registeredBy?: string;
 }
 
+// ========================
+// CALL CENTER TYPES
+// ========================
+
+export interface CallQuestion {
+  id: string;
+  question: string;
+  type?: 'boolean' | 'text' | 'currency' | 'day';
+  order: number;
+  isActive: boolean;
+  isDefault?: boolean;
+}
+
+export type CallStatus = 
+  | 'PENDIENTE' 
+  | 'EXITOSA' 
+  | 'CON_OBSERVACIONES' 
+  | 'NO_CONTESTO' 
+  | 'NUMERO_EQUIVOCADO' 
+  | 'VOLVER_A_LLAMAR';
+
+export interface CallRecordAnswers {
+  conditionsExplained?: string;     // ¿Le explicaron las condiciones de su crédito?
+  moneyReceivedDirectly?: string;   // ¿Usted recibió directamente el dinero?
+  confirmedAmount?: string;         // ¿De cuánto fue su crédito?
+  paymentDayInformed?: string;      // ¿Le comentaron qué día debe realizar su pago?
+  wasSupervised?: string;           // ¿Le supervisaron?
+  supervisorName?: string;          // ¿Quién lo supervisó?
+  customAnswers?: Record<string, string>; // Respuestas a preguntas adicionales configuradas
+}
+
+export interface CallRecord {
+  id: string;
+  batchId?: string;                 // ID del lote de importación si proviene de PDFs
+  batchDate?: string;                // Fecha de importación del lote YYYY-MM-DD
+  callDate?: string;                 // Fecha en que se realizó la llamada YYYY-MM-DD
+  callTime?: string;                 // Hora en que se realizó la llamada HH:mm
+  status: CallStatus;
+  
+  // Encabezado del formato (según la hoja oficial)
+  callerName?: string;              // QUIEN LLAMÓ
+  executive?: string;               // EJECUTIVO
+  supervisor?: string;              // SUPERVISORA
+  groupName?: string;               // GRUPO
+  plaza?: string;                   // PLAZA
+  clientName: string;               // CLIENTE
+  clientAddress?: string;           // DIRECCION CLIENTE
+  clientNeighborhood?: string;      // COLONIA CLIENTE
+  loanDate?: string;                // FECHA DE PRESTAMO (DD/MM/AAAA o YYYY-MM-DD)
+  dueDate?: string;                 // VENCE
+  phone: string;                    // TEL CLIENTE
+  loanAmount?: string | number;      // CANTIDAD
+  weeklyPayment?: string | number;   // ABONA
+
+  // Datos del Aval (de la hoja)
+  guarantorName?: string;           // NOMBRE AVAL
+  guarantorAddress?: string;        // DIRECCION AVAL
+  guarantorNeighborhood?: string;   // COLONIA AVAL
+  guarantorPhone?: string;          // TEL AVAL
+  
+  // Respuestas del cuestionario
+  answers: CallRecordAnswers;
+  
+  // Observaciones generales
+  observations?: string;            // OBSERVACIONES
+  
+  // Metadatos y Autoría
+  userId?: string;                  // ID del usuario de oficina que gestiona la llamada
+  userAccessCode?: string;          // Código de acceso del usuario
+  sourcePdfName?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface WeeklySheetExtractedClient {
+  id: string;
+  name: string;                     // NOMBRE CLIENTE
+  address?: string;                 // DIRECCION CLIENTE
+  neighborhood?: string;            // COLONIA CLIENTE
+  phone?: string;                   // TELEFONO CLIENTE
+  guarantorName?: string;           // NOMBRE AVAL
+  guarantorAddress?: string;        // DIRECCION AVAL
+  guarantorNeighborhood?: string;   // COLONIA AVAL
+  guarantorPhone?: string;          // TELEFONO AVAL
+  amount?: string | number;         // CANTIDAD
+  weeklyPayment?: string | number;  // ABONA
+  loanDate?: string;                // FECHA
+  dueDate?: string;                 // VENCE
+  isSelected?: boolean;
+}
+
+export interface WeeklySheetGroup {
+  id: string;
+  fileName: string;
+  groupName: string;
+  executive?: string;
+  supervisor?: string;
+  plaza?: string;
+  loanDate?: string;
+  dueDate?: string;
+  amount?: string | number;
+  clients: WeeklySheetExtractedClient[];
+  selectedCount: number;
+}
+
+export interface CallBatch {
+  id: string;
+  date: string;                     // YYYY-MM-DD
+  weekNumber?: string | number;
+  pdfNames: string[];
+  groupsCount: number;
+  totalClientsFound: number;
+  selectedClientsCount: number;
+  userId?: string;                  // ID del usuario de oficina que importó el lote
+  createdByName?: string;
+  createdAt: string;
+}
+
+export interface CallCenterPermissions {
+  allowedUserIds: string[];         // IDs de colaboradores autorizados por 0120 para ver el historial global
+  updatedAt: string;
+  updatedBy: string;
+}
+
+

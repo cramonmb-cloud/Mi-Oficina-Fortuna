@@ -27,7 +27,7 @@ import {
   getDownloadURL 
 } from "firebase/storage";
 import { db, storage } from "../firebase";
-import { Employee, Expense, Task, TaskStatus, AppSettings, GeneratedImage, Plaza, Fallo, VacationRequest, Office, EmployeeContract } from "../types";
+import { Employee, Expense, Task, TaskStatus, AppSettings, GeneratedImage, Plaza, Fallo, VacationRequest, Office, EmployeeContract, CallRecord, CallBatch, CallQuestion, CallCenterPermissions } from "../types";
 import { uploadToImgBB } from "./imgbbService";
 
 
@@ -1057,5 +1057,250 @@ export const saveGeneratedDocument = async (docRecord: any) => {
 export const deleteGeneratedDocument = async (id: string) => {
   return await deleteDoc(doc(db, "generated_documents", id));
 };
+
+// ==========================================
+// CALL CENTER CLOUD FUNCTIONS
+// ==========================================
+
+export const subscribeToCallRecords = (
+  callback: (records: CallRecord[]) => void, 
+  onError?: (error: any) => void
+) => {
+  const q = query(collection(db, "call_records"), orderBy("createdAt", "desc"));
+  return onSnapshot(q, (snapshot) => {
+    const records = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as CallRecord));
+    callback(records);
+  }, onError || ((err) => console.error("Error subscribing to call records:", err)));
+};
+
+export const saveCallRecord = async (record: Omit<CallRecord, 'id'> | Partial<CallRecord>): Promise<string> => {
+  try {
+    const colRef = collection(db, "call_records");
+    const docRef = await addDoc(colRef, {
+      ...record,
+      createdAt: record.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+    return docRef.id;
+  } catch (err) {
+    console.error("Error saving call record:", err);
+    throw err;
+  }
+};
+
+export const updateCallRecord = async (id: string, updates: Partial<CallRecord>): Promise<void> => {
+  try {
+    const docRef = doc(db, "call_records", id);
+    await updateDoc(docRef, {
+      ...updates,
+      updatedAt: new Date().toISOString()
+    });
+  } catch (err) {
+    console.error("Error updating call record:", err);
+    throw err;
+  }
+};
+
+export const deleteCallRecord = async (id: string): Promise<void> => {
+  try {
+    await deleteDoc(doc(db, "call_records", id));
+  } catch (err) {
+    console.error("Error deleting call record:", err);
+    throw err;
+  }
+};
+
+export const subscribeToCallBatches = (
+  callback: (batches: CallBatch[]) => void,
+  onError?: (error: any) => void
+) => {
+  const q = query(collection(db, "call_batches"), orderBy("createdAt", "desc"));
+  return onSnapshot(q, (snapshot) => {
+    const batches = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as CallBatch));
+    callback(batches);
+  }, onError || ((err) => console.error("Error subscribing to call batches:", err)));
+};
+
+export const saveCallBatch = async (
+  batchData: Omit<CallBatch, 'id'>,
+  records: Omit<CallRecord, 'id'>[]
+): Promise<string> => {
+  try {
+    const batchColRef = collection(db, "call_batches");
+    const batchDocRef = await addDoc(batchColRef, {
+      ...batchData,
+      createdAt: batchData.createdAt || new Date().toISOString()
+    });
+    const batchId = batchDocRef.id;
+
+    // Use Firestore writeBatch for atomicity
+    const firestoreBatch = writeBatch(db);
+    const recordsColRef = collection(db, "call_records");
+
+    for (const rec of records) {
+      const recDocRef = doc(recordsColRef);
+      firestoreBatch.set(recDocRef, {
+        ...rec,
+        batchId,
+        createdAt: rec.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+    }
+
+    await firestoreBatch.commit();
+    return batchId;
+  } catch (err) {
+    console.error("Error saving call batch:", err);
+    throw err;
+  }
+};
+
+export const deleteCallBatch = async (batchId: string): Promise<void> => {
+  try {
+    // 1. Delete associated records in batch
+    const q = query(collection(db, "call_records"), where("batchId", "==", batchId));
+    const snapshot = await getDocs(q);
+    const firestoreBatch = writeBatch(db);
+    snapshot.docs.forEach(docSnap => {
+      firestoreBatch.delete(docSnap.ref);
+    });
+    // 2. Delete the batch document
+    firestoreBatch.delete(doc(db, "call_batches", batchId));
+    await firestoreBatch.commit();
+  } catch (err) {
+    console.error("Error deleting call batch and its records:", err);
+    throw err;
+  }
+};
+
+export const subscribeToCallQuestions = (
+  callback: (questions: CallQuestion[]) => void,
+  onError?: (error: any) => void
+) => {
+  const docRef = doc(db, "settings", "call_questions_config");
+  return onSnapshot(docRef, (docSnap) => {
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      if (Array.isArray(data?.questions) && data.questions.length > 0) {
+        callback(data.questions);
+        return;
+      }
+    }
+    // Return default standard questions matching the official sheet
+    callback(getDefaultCallQuestions());
+  }, onError || ((err) => {
+    console.error("Error subscribing to call questions:", err);
+    callback(getDefaultCallQuestions());
+  }));
+};
+
+export const saveCallQuestionsToCloud = async (questions: CallQuestion[]) => {
+  try {
+    const docRef = doc(db, "settings", "call_questions_config");
+    await setDoc(docRef, {
+      questions,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  } catch (err) {
+    console.error("Error saving call questions to cloud:", err);
+    throw err;
+  }
+};
+
+export const getDefaultCallQuestions = (): CallQuestion[] => [
+  {
+    id: 'conditions_explained',
+    question: '¿Le explicaron las condiciones de su crédito?',
+    type: 'boolean',
+    order: 1,
+    isActive: true,
+    isDefault: true
+  },
+  {
+    id: 'money_received_directly',
+    question: '¿Usted recibió directamente el dinero?',
+    type: 'boolean',
+    order: 2,
+    isActive: true,
+    isDefault: true
+  },
+  {
+    id: 'confirmed_amount',
+    question: '¿De cuánto fue su crédito?',
+    type: 'currency',
+    order: 3,
+    isActive: true,
+    isDefault: true
+  },
+  {
+    id: 'payment_day_informed',
+    question: '¿Le comentaron qué día debe realizar su pago?',
+    type: 'day',
+    order: 4,
+    isActive: true,
+    isDefault: true
+  },
+  {
+    id: 'was_supervised',
+    question: '¿Le supervisaron?',
+    type: 'boolean',
+    order: 5,
+    isActive: true,
+    isDefault: true
+  },
+  {
+    id: 'supervisor_name',
+    question: '¿Quién lo supervisó?',
+    type: 'text',
+    order: 6,
+    isActive: true,
+    isDefault: true
+  }
+];
+
+export const subscribeToCallCenterPermissions = (
+  callback: (permissions: CallCenterPermissions) => void,
+  onError?: (error: any) => void
+) => {
+  const docRef = doc(db, "settings", "call_center_permissions");
+  return onSnapshot(docRef, (docSnap) => {
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      callback({
+        allowedUserIds: Array.isArray(data?.allowedUserIds) ? data.allowedUserIds : [],
+        updatedAt: data?.updatedAt || '',
+        updatedBy: data?.updatedBy || ''
+      });
+      return;
+    }
+    callback({
+      allowedUserIds: [],
+      updatedAt: '',
+      updatedBy: ''
+    });
+  }, onError || ((err) => {
+    console.error("Error subscribing to call center permissions:", err);
+    callback({ allowedUserIds: [], updatedAt: '', updatedBy: '' });
+  }));
+};
+
+export const saveCallCenterPermissions = async (
+  allowedUserIds: string[],
+  updatedBy: string
+): Promise<void> => {
+  try {
+    const docRef = doc(db, "settings", "call_center_permissions");
+    await setDoc(docRef, {
+      allowedUserIds,
+      updatedAt: new Date().toISOString(),
+      updatedBy
+    }, { merge: true });
+  } catch (err) {
+    console.error("Error saving call center permissions:", err);
+    throw err;
+  }
+};
+
+
 
 

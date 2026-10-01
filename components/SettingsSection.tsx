@@ -45,7 +45,8 @@ import {
   Settings,
   Plus,
   RotateCcw,
-  SlidersHorizontal
+  SlidersHorizontal,
+  PhoneCall
 } from 'lucide-react';
 import { 
   updateAppSettings, 
@@ -108,7 +109,7 @@ export function SettingsSection({
   const [navSubTab, setNavSubTab] = useState<'sidebar' | 'mobile'>('sidebar');
 
   const defaultMenuOrder = [
-    'tablero', 'personal', 'autos', 'gastos', 'tareas', 
+    'tablero', 'callcenter', 'personal', 'autos', 'gastos', 'tareas', 
     'pagares', 'formatos', 'fallos', 'mascota', 'imprenta', 'ajustes'
   ];
 
@@ -378,6 +379,7 @@ export function SettingsSection({
 
   const moduleMetaMap: Record<string, { label: string; icon: any; color: string; bg: string }> = {
     tablero: { label: 'Panel', icon: LayoutDashboard, color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200' },
+    callcenter: { label: 'Call Center', icon: PhoneCall, color: 'text-indigo-600', bg: 'bg-indigo-50 border-indigo-200' },
     personal: { label: 'Personal', icon: Users, color: 'text-purple-600', bg: 'bg-purple-50 border-purple-200' },
     autos: { label: 'Auto', icon: Car, color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200' },
     gastos: { label: 'Gastos', icon: DollarSign, color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200' },

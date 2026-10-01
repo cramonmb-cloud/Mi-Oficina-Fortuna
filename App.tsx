@@ -41,6 +41,7 @@ import {
   Car,
   MessageSquare,
   FileStack,
+  PhoneCall,
   MoreHorizontal
 } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -68,6 +69,7 @@ import { Imprenta } from './components/Imprenta';
 import { Vehicles } from './components/Vehicles';
 import { SettingsSection } from './components/SettingsSection';
 import { Formatos } from './components/Formatos';
+import { CallCenter } from './components/CallCenter/CallCenter';
 
 import { 
   getEmployees, 
@@ -114,31 +116,7 @@ function App() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Sync activeTab with URL
-  useEffect(() => {
-    if (currentUser?.isOfficeUser) {
-      setActiveTab('gastos');
-      if (location.pathname !== '/gastos') {
-        navigate('/gastos');
-      }
-      return;
-    }
-    const path = location.pathname.substring(1);
-    if (path && navItems.some(item => item.id === path)) {
-      setActiveTab(path);
-    } else if (location.pathname === '/') {
-      setActiveTab('tablero');
-    }
-  }, [location.pathname, currentUser]);
 
-  const handleTabChange = (tabId: string) => {
-    setActiveTab(tabId);
-    if (tabId === 'tablero') {
-      navigate('/');
-    } else {
-      navigate(`/${tabId}`);
-    }
-  };
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     try {
@@ -229,8 +207,11 @@ function App() {
   });
 
   const navItems = useMemo(() => {
+    const isCallCenterAllowed = currentUser?.accessCode === '0120' || currentUser?.category === 'Oficina';
+
     const rawItems = [
       { id: 'tablero', label: 'Panel', icon: LayoutDashboard },
+      ...(isCallCenterAllowed ? [{ id: 'callcenter', label: 'Call Center', icon: PhoneCall }] : []),
       { id: 'personal', label: 'Personal', icon: Users },
       { id: 'autos', label: 'Auto', icon: Car },
       { id: 'gastos', label: 'Gastos', icon: DollarSign },
@@ -267,7 +248,7 @@ function App() {
     }
 
     return ordered;
-  }, [mascotaName, currentUser?.isOfficeUser, menuOrder]);
+  }, [mascotaName, currentUser?.isOfficeUser, currentUser?.category, currentUser?.accessCode, menuOrder]);
 
   const mobileDockItems = useMemo(() => {
     const list = mobileNavSections
@@ -279,6 +260,39 @@ function App() {
     }
     return list.slice(0, 4);
   }, [mobileNavSections, navItems]);
+
+  // Sync activeTab with URL (declared after navItems to prevent Temporal Dead Zone)
+  useEffect(() => {
+    if (currentUser?.isOfficeUser) {
+      setActiveTab('gastos');
+      if (location.pathname !== '/gastos') {
+        navigate('/gastos');
+      }
+      return;
+    }
+    const isCallCenterAllowed = currentUser?.accessCode === '0120' || currentUser?.category === 'Oficina';
+    if (location.pathname === '/callcenter' && !isCallCenterAllowed) {
+      setActiveTab('tablero');
+      navigate('/');
+      return;
+    }
+
+    const path = location.pathname.substring(1);
+    if (path && navItems.some(item => item.id === path)) {
+      setActiveTab(path);
+    } else if (location.pathname === '/') {
+      setActiveTab('tablero');
+    }
+  }, [location.pathname, currentUser, navItems]);
+
+  const handleTabChange = (tabId: string) => {
+    setActiveTab(tabId);
+    if (tabId === 'tablero') {
+      navigate('/');
+    } else {
+      navigate(`/${tabId}`);
+    }
+  };
 
   const [googleApiKey, setGoogleApiKey] = useState('');
   const [imgbbApiKey, setImgbbApiKey] = useState('');
@@ -838,6 +852,21 @@ function App() {
 
     switch (activeTab) {
       case 'tablero': return <Dashboard currentUser={currentUser} employees={employees} expenses={dashboardExpenses} tasks={tasks} mascotaUrl={mascotaUrl} mascotaName={mascotaName} companyName={companyName} birthdayPrompt={birthdayPrompt} birthdayVideoPrompt={birthdayVideoPrompt} birthdayWhatsAppTemplate={birthdayWhatsAppTemplate} selectedBdayEmployeeId={selectedBdayEmployeeId} setSelectedBdayEmployeeId={setSelectedBdayEmployeeId} />;
+      case 'callcenter': 
+        if (currentUser?.accessCode !== '0120' && currentUser?.category !== 'Oficina') {
+          return (
+            <div className="p-8 text-center bg-white rounded-2xl border border-slate-200 shadow-sm max-w-lg mx-auto mt-12 space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
+                <PhoneCall className="w-6 h-6 text-rose-500" />
+              </div>
+              <h3 className="text-base font-bold text-slate-900">Acceso Exclusivo de Oficina</h3>
+              <p className="text-xs text-slate-500">
+                El módulo de Call Center está disponible únicamente para colaboradores del área de Oficina.
+              </p>
+            </div>
+          );
+        }
+        return <CallCenter currentUser={currentUser} employees={employees} companyName={companyName} companyLogoUrl={companyLogoUrl} />;
       case 'personal': return <Personnel employees={employees} plazas={plazas} isLoading={!hasLoadedEmployees} currentUser={currentUser} companyName={companyName} companyLogoUrl={companyLogoUrl} companyRfc={companyRfc} companyAddress={companyAddress} companyPhone={companyPhone} showCompanyInfoOnCredential={showCompanyInfoOnCredential} />;
       case 'autos': return <Vehicles employees={employees} vehicles={vehicles} assignments={vehicleAssignments} events={vehicleEvents} isLoading={!hasLoadedVehicles} companyName={companyName} />;
       case 'gastos': return <Expenses expenses={expenses} employees={employees} isLoading={!hasLoadedExpenses} loadAll={loadAllExpenses} isSyncing={isSyncingExpenses} onLoadAll={() => { setLoadAllExpenses(true); setIsSyncingExpenses(true); }} multiOfficeEnabled={multiOfficeEnabled} currentUser={currentUser} />;
